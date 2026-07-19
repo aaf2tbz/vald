@@ -117,75 +117,7 @@ pprof/%.mem.svg: \
 .PHONY: bench
 ## run all benchmarks
 bench: \
-	bench/core \
 	bench/agent
-
-.PHONY: bench/core
-## run benchmarks for core
-bench/core: \
-	bench/core/ngt
-
-.PHONY: bench/core/ngt
-## run benchmark for NGT core
-bench/core/ngt: \
-	bench/core/ngt/sequential \
-	bench/core/ngt/parallel
-
-.PHONY: bench/core/ngt/sequential
-## run benchmark for NGT core sequential methods
-bench/core/ngt/sequential: \
-	pprof/core/ngt/sequential.cpu.svg \
-	pprof/core/ngt/sequential.mem.svg
-
-.PHONY: pprof/core/ngt/sequential.bin
-## run pprof of benchmark for NGT core sequential methods
-pprof/core/ngt/sequential.bin: \
-	hack/benchmark/core/ngt/ngt_bench_test.go
-	mkdir -p $(dir $@)
-	GOPRIVATE=$(GOPRIVATE) \
-	GOARCH=$(GOARCH) \
-	GOOS=$(GOOS) \
-	CGO_LDFLAGS="$(TEST_LDFLAGS)" \
-	go test \
-	-mod=readonly \
-	-count=1 \
-	-timeout=1h \
-	-bench=NGTSequential \
-	-benchmem \
-	-o $@ \
-	-cpuprofile $(patsubst %.bin,%.cpu.out,$@) \
-	-memprofile $(patsubst %.bin,%.mem.out,$@) \
-	-trace $(patsubst %.bin,%.trace.out,$@) \
-	$< \
-	-dataset=$(DATASET_ARGS)
-
-.PHONY: bench/core/ngt/parallel
-## run benchmark for NGT core parallel methods
-bench/core/ngt/parallel: \
-	pprof/core/ngt/parallel.cpu.svg \
-	pprof/core/ngt/parallel.mem.svg
-
-.PHONY: pprof/core/ngt/parallel.bin
-## run pprof of benchmark for NGT core parallel methods
-pprof/core/ngt/parallel.bin: \
-	hack/benchmark/core/ngt/ngt_bench_test.go
-	mkdir -p $(dir $@)
-	GOPRIVATE=$(GOPRIVATE) \
-	GOARCH=$(GOARCH) \
-	GOOS=$(GOOS) \
-	CGO_LDFLAGS="$(TEST_LDFLAGS)" \
-	go test \
-	-mod=readonly \
-	-count=1 \
-	-timeout=1h \
-	-bench=NGTParallel \
-	-benchmem \
-	-o $@ \
-	-cpuprofile $(patsubst %.bin,%.cpu.out,$@) \
-	-memprofile $(patsubst %.bin,%.mem.out,$@) \
-	-trace $(patsubst %.bin,%.trace.out,$@) \
-	$< \
-	-dataset=$(DATASET_ARGS)
 
 .PHONY: bench/agent
 ## run benchmarks for vald agent
