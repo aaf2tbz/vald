@@ -261,8 +261,14 @@ type PortForward struct {
 type Port string
 
 // Dataset holds dataset-related configuration.
+//
+// Name refers to an ann-benchmarks style HDF5 fixture on disk and is mutually
+// exclusive with Dimension. Dimension is used for scenarios that only need
+// synthetically generated vectors (e.g. maximum vector dimension probing),
+// where preparing an HDF5 fixture per dimension is impractical.
 type Dataset struct {
-	Name string `yaml:"name" json:"name,omitempty"`
+	Name      string `yaml:"name,omitempty"      json:"name,omitempty"`
+	Dimension int    `yaml:"dimension,omitempty" json:"dimension,omitempty"`
 }
 
 // Expect holds expected results for executions.
@@ -1023,7 +1029,9 @@ func (d *Dataset) Bind() (bound *Dataset, err error) {
 		return nil, errors.Wrap(errors.ErrInvalidConfig, "missing required fields on Dataset")
 	}
 	d.Name = config.GetActualValue(d.Name)
-	// Name can be empty for scenarios that do not require a dataset (e.g. operator verification).
+	// Name can be empty for scenarios that do not require a dataset (e.g. operator
+	// verification) or that synthesize one from Dimension instead (e.g. maximum
+	// vector dimension probing).
 	if d.Name != "" && !file.Exists(d.Name) {
 		return nil, errors.Errorf("dataset file: %s does not exist", d.Name)
 	}

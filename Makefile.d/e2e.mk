@@ -106,6 +106,21 @@ e2e/readreplica:
 e2e/maxdim:
 	$(call run-e2e-max-dim-test)
 
+# E2E_MAX_DIM is 2^E2E_MAX_DIM_BIT, except at the uint32 boundary (bit 32)
+# where it is capped to math.MaxUint32, mirroring
+# tests/e2e/performance/max_vector_dim_test.go and
+# .github/workflows/e2e-max-dim.yaml.
+ifeq ($(E2E_MAX_DIM_BIT),32)
+E2E_MAX_DIM := $(shell echo $$(( (1 << 32) - 1 )))
+else
+E2E_MAX_DIM := $(shell echo $$(( 1 << $(E2E_MAX_DIM_BIT) )))
+endif
+
+.PHONY: e2e/v2/maxdim
+## run e2e/v2/maxdim (config-based: insert & search a single vector of dimension 2^E2E_MAX_DIM_BIT)
+e2e/v2/maxdim:
+	$(call run-v2-e2e-max-dim-test,-run TestE2EStrategy)
+
 .PHONY: e2e/sidecar
 ## run e2e with sidecar operation
 e2e/sidecar:
