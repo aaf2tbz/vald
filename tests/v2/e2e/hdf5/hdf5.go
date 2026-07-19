@@ -66,6 +66,21 @@ func (d *Dataset) InitNoiseFunc(num uint64, opts ...noise.Option) noise.Func {
 	return d.noiseFunc
 }
 
+// New builds a Dataset directly from already in-memory slices, bypassing
+// ToDataset. maxLen is unexported so callers outside this package (e.g.
+// synthetic, fixture-less datasets) cannot set it via a struct literal; this
+// constructor exists so they can still control it explicitly instead of
+// silently getting the zero value, which would make every TrainCycle/
+// TestCycle call route through InitNoiseFunc's noise generation path.
+func New(train, test [][]float32, neighbors [][]int, maxLen uint64) *Dataset {
+	return &Dataset{
+		Train:     train,
+		Test:      test,
+		Neighbors: neighbors,
+		maxLen:    maxLen,
+	}
+}
+
 func ToDataset(name string) (*Dataset, error) {
 	file, err := hdf5.OpenFile(name, hdf5.F_ACC_RDONLY)
 	if err != nil {

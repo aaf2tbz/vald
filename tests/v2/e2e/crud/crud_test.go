@@ -27,6 +27,7 @@ import (
 	"github.com/vdaas/vald/internal/os"
 	"github.com/vdaas/vald/internal/params"
 	"github.com/vdaas/vald/internal/strings"
+	"github.com/vdaas/vald/internal/test/data/vector"
 	"github.com/vdaas/vald/tests/v2/e2e/config"
 	"github.com/vdaas/vald/tests/v2/e2e/dataset"
 	"github.com/vdaas/vald/tests/v2/e2e/hdf5"
@@ -75,10 +76,28 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			log.Fatalf("failed to load dataset: %v", err)
 		}
+	} else if cfg.Dataset != nil && cfg.Dataset.Dimension > 0 {
+		// No HDF5 fixture requested (e.g. maximum vector dimension probing);
+		// synthesize a single-vector dataset of the configured dimension instead.
+		ds = newSyntheticDataset(cfg.Dataset.Dimension)
 	} else {
 		// dataset-less scenarios (e.g. operator verification) do not require hdf5 loading.
 		log.Info("dataset name is empty, skipping dataset loading")
 	}
 	cfg.FilePath = fp
 	os.Exit(m.Run())
+}
+
+// newSyntheticDataset builds a single-vector in-memory dataset for scenarios
+// that need a vector of an arbitrary dimension without a pre-built HDF5
+// fixture (e.g. maximum vector dimension probing, where fixtures would need
+// to be multiple gigabytes in size for high dimensions).
+func newSyntheticDataset(dim int) *hdf5.Dataset {
+	vec := vector.GaussianDistributedFloat32VectorGenerator(1, dim)[0]
+	// maxLen is set to 1 explicitly (matching the single synthesized vector)
+	// so TrainCycle/TestCycle never fall into InitNoiseFunc's noise
+	// generation path, which HDF5ToDataset-backed datasets only enter once
+	// num exceeds the size of the loaded fixture. This is a single-vector
+	// dimension probe, so noise is an unintended side effect here.
+	return hdf5.New([][]float32{vec}, [][]float32{vec}, [][]int{{0}}, 1)
 }
