@@ -674,6 +674,12 @@ func (ot OperationType) Bind() (bound OperationType, err error) {
 		return OpIndexProperty, nil
 	case "flush", "fl", "f":
 		return OpFlush, nil
+	case "createindex", "createidx", "ci":
+		return OpCreateIndex, nil
+	case "saveindex", "saveidx", "si":
+		return OpSaveIndex, nil
+	case "createandsaveindex", "createandsave", "cas":
+		return OpCreateAndSaveIndex, nil
 	case "kubernetes", "kube", "k8s":
 		return OpKubernetes, nil
 	case "client", "cli", "c", "grpc":
