@@ -241,3 +241,33 @@ e2e/v2/actions/run/operator: \
 		e2e/v2/operator
 	$(MAKE) k8s/operator/vald/delete
 	$(MAKE) k3d/delete
+
+.PHONY: e2e/v2/actions/run/faiss
+## run GitHub Actions E2E/V2 test (FAISS agent backend, CRUD)
+e2e/v2/actions/run/faiss: \
+	hack/benchmark/assets/dataset/$(E2E_DATASET_NAME) \
+	k3d/restart
+	kubectl wait -n kube-system --for=condition=Available deployment/metrics-server --timeout=$(E2E_WAIT_FOR_START_TIMEOUT)
+	sleep 2
+	kubectl wait -n kube-system --for=condition=Ready pod -l app.kubernetes.io/name=metrics-server --timeout=$(E2E_WAIT_FOR_START_TIMEOUT)
+	kubectl wait -n kube-system --for=condition=ContainersReady pod -l app.kubernetes.io/name=metrics-server --timeout=$(E2E_WAIT_FOR_START_TIMEOUT)
+	$(MAKE) k8s/vald/deploy \
+	VERSION=$(VERSION) \
+	HELM_VALUES=$(ROOTDIR)/.github/helm/values/values-faiss.yaml \
+	HELM_EXTRA_OPTIONS="--set agent.image.repository=$(CRORG)/$(AGENT_FAISS_IMAGE)"
+	sleep 3
+	kubectl wait --for=condition=Ready pod -l "app=$(LB_GATEWAY_IMAGE)" --timeout=$(E2E_WAIT_FOR_START_TIMEOUT)
+	kubectl wait --for=condition=ContainersReady pod -l "app=$(LB_GATEWAY_IMAGE)" --timeout=$(E2E_WAIT_FOR_START_TIMEOUT)
+	kubectl get pods
+	$(MAKE) E2E_CONFIG="$(E2E_CONFIG_DIR)/faiss_crud.yaml" \
+		E2E_TIMEOUT=30m \
+		E2E_PARALLELISM="4" \
+		E2E_INSERT_COUNT="10000" \
+		E2E_EXPECTED_INDEX="30000" \
+		E2E_QPS="30" \
+		E2E_SEARCH_COUNT="10" \
+		E2E_UPDATE_COUNT="100" \
+		E2E_BULK_SIZE="10" \
+		e2e/v2
+	$(MAKE) k8s/vald/delete
+	$(MAKE) k3d/delete
