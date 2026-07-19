@@ -28,6 +28,7 @@ import (
 	"github.com/vdaas/vald/internal/params"
 	"github.com/vdaas/vald/internal/strings"
 	"github.com/vdaas/vald/tests/v2/e2e/config"
+	"github.com/vdaas/vald/tests/v2/e2e/dataset"
 	"github.com/vdaas/vald/tests/v2/e2e/hdf5"
 )
 
@@ -70,7 +71,7 @@ func TestMain(m *testing.M) {
 	}
 	log.Init(log.WithLevel(cfg.Logging.Level), log.WithFormat(cfg.Logging.Format))
 	if cfg.Dataset != nil && cfg.Dataset.Name != "" {
-		ds, err = hdf5.ToDataset(cfg.Dataset.Name)
+		ds, err = dataset.ToDataset(cfg.Dataset)
 		if err != nil {
 			log.Fatalf("failed to load dataset: %v", err)
 		}
