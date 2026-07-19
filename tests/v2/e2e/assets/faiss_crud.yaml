@@ -39,8 +39,10 @@
 #     of vectors (nlist is 100 by default, so training needs at least a few
 #     thousand vectors) before CreateIndex/auto-indexing can succeed, so
 #     the Insert count driving this strategy (_E2E_INSERT_COUNT_) must stay
-#     comfortably above that threshold (the default of 60000, see
-#     Makefile E2E_INSERT_COUNT, satisfies this).
+#     comfortably above that threshold (the e2e/v2/actions/run/faiss
+#     Makefile target and the e2e.v2 GitHub Actions workflow both override
+#     E2E_INSERT_COUNT to 10000, well above the default nlist of 100,
+#     satisfying this).
 #   - The post-insert wait/retry budget below matches the NGT unary_crud.yaml
 #     values; FAISS auto-indexing is governed by
 #     agent.faiss.auto_index_duration_limit / auto_index_check_duration
