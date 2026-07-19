@@ -229,6 +229,7 @@ func (r *runner) processOperation(
 		if op.Metrics != nil && op.Metrics.Enabled && col != nil {
 			snapshot := col.GlobalSnapshot()
 			log.Infof("Operation Metrics for %s/%s:\n%s", strategyName, op.Name, snapshot)
+			logRecallAndQPS(tt, fmt.Sprintf("%s/%s", strategyName, op.Name), col)
 		}
 	})
 	return col
@@ -357,6 +358,7 @@ func (r *runner) processExecution(
 		if e.Metrics != nil && e.Metrics.Enabled && e.Collector != nil {
 			snapshot := e.Collector.GlobalSnapshot()
 			log.Infof("Execution Metrics for %s/%s/%s:\n%s", strategyName, opName, e.Name, snapshot)
+			logRecallAndQPS(tt, fmt.Sprintf("%s/%s/%s", strategyName, opName, e.Name), e.Collector)
 		}
 	})
 	return e.Collector

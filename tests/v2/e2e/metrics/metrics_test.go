@@ -248,3 +248,70 @@ func TestCollector_Merge(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestCounterHandle_Value(t *testing.T) {
+	type args struct {
+		adds []int64
+	}
+
+	if err := test.Run(t.Context(), t, func(t *testing.T, args args) (uint64, error) {
+		t.Helper()
+		c, err := NewCollector(WithCustomCounters("recall_sum_ppm"))
+		if err != nil {
+			return 0, err
+		}
+		h, err := c.CounterHandle("recall_sum_ppm")
+		if err != nil {
+			return 0, err
+		}
+		for _, v := range args.adds {
+			h.Add(v)
+		}
+		return h.Value(), nil
+	}, []test.Case[uint64, args]{
+		{
+			Name: "no writes returns zero",
+			Args: args{adds: nil},
+			Want: test.Result[uint64]{Val: 0},
+		},
+		{
+			Name: "single add is reflected",
+			Args: args{adds: []int64{42}},
+			Want: test.Result[uint64]{Val: 42},
+		},
+		{
+			Name: "repeated adds accumulate",
+			Args: args{adds: []int64{1, 2, 3, 4}},
+			Want: test.Result[uint64]{Val: 10},
+		},
+		{
+			// Add() rejects negative deltas (counters are monotonic), so a
+			// negative value must be a no-op rather than underflowing.
+			Name: "negative add is ignored",
+			Args: args{adds: []int64{5, -100}},
+			Want: test.Result[uint64]{Val: 5},
+		},
+	}...); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCounterHandle_Value_NilSafety(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil handle", func(t *testing.T) {
+		t.Parallel()
+		var h *CounterHandle
+		if got := h.Value(); got != 0 {
+			t.Errorf("Value() on nil handle = %d, want 0", got)
+		}
+	})
+
+	t.Run("handle with nil storage", func(t *testing.T) {
+		t.Parallel()
+		h := &CounterHandle{}
+		if got := h.Value(); got != 0 {
+			t.Errorf("Value() on zero-value handle = %d, want 0", got)
+		}
+	})
+}

@@ -50,16 +50,28 @@ package metrics
 // ground-truth count) generalized with an explicit k so callers can compare
 // against hdf5 ground-truth rows that are longer than the benchmark's k.
 func CalcRecall(got, truth []int, k int) (recall float64) {
-	// TODO(vald): implement once this package leaves the TDAD RED phase.
-	// Intentionally left as an empty stub so that recall_test.go's
-	// table-driven cases fail on the RED-phase zero value below instead of
-	// aborting the process.
-	//
-	// Do not fill this in without first reading recall_test.go: the exact
-	// semantics of k-clamping (effectiveK) and top-k truncation of BOTH got
-	// and truth are pinned down there by table-driven cases, and are not
-	// obvious from the signature alone (in particular: matches beyond
-	// effectiveK in got must not count, see the
-	// "match beyond effective k in got must not count" test case).
-	return recall
+	effectiveK := k
+	if len(truth) < effectiveK {
+		effectiveK = len(truth)
+	}
+	if effectiveK <= 0 {
+		return 0
+	}
+	if len(got) > effectiveK {
+		got = got[:effectiveK]
+	}
+	truth = truth[:effectiveK]
+
+	truthIDs := make(map[int]struct{}, effectiveK)
+	for _, id := range truth {
+		truthIDs[id] = struct{}{}
+	}
+
+	var matched float64
+	for _, id := range got {
+		if _, ok := truthIDs[id]; ok {
+			matched++
+		}
+	}
+	return matched / float64(effectiveK)
 }
