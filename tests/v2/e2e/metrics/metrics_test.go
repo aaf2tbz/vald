@@ -65,6 +65,63 @@ func TestNewCollector(t *testing.T) {
 	}
 }
 
+// checkRecordSingleSuccess verifies the snapshot produced by a single
+// successful record: exactly one request, no errors, one latency sample.
+func checkRecordSingleSuccess(got test.Result[*GlobalSnapshot]) error {
+	if got.Err != nil {
+		return got.Err
+	}
+	snap := got.Val
+	if snap.Total != 1 {
+		return errors.Errorf("expected total 1, got %d", snap.Total)
+	}
+	if snap.Errors != 0 {
+		return errors.Errorf("expected errors 0, got %d", snap.Errors)
+	}
+	if snap.Latencies.Total != 1 {
+		return errors.Errorf("expected latencies total 1, got %d", snap.Latencies.Total)
+	}
+	return nil
+}
+
+// checkRecordSingleError verifies the snapshot produced by a single failed
+// record: exactly one request, counted as an error.
+func checkRecordSingleError(got test.Result[*GlobalSnapshot]) error {
+	if got.Err != nil {
+		return got.Err
+	}
+	snap := got.Val
+	if snap.Total != 1 {
+		return errors.Errorf("expected total 1, got %d", snap.Total)
+	}
+	if snap.Errors != 1 {
+		return errors.Errorf("expected errors 1, got %d", snap.Errors)
+	}
+	return nil
+}
+
+// checkRecordMultipleRequests verifies the snapshot produced by a mix of
+// successful and failed records, including the aggregated latency mean.
+func checkRecordMultipleRequests(got test.Result[*GlobalSnapshot]) error {
+	if got.Err != nil {
+		return got.Err
+	}
+	snap := got.Val
+	if snap.Total != 3 {
+		return errors.Errorf("expected total 3, got %d", snap.Total)
+	}
+	if snap.Errors != 1 {
+		return errors.Errorf("expected errors 1, got %d", snap.Errors)
+	}
+	if snap.Latencies.Total != 3 {
+		return errors.Errorf("expected latencies total 3, got %d", snap.Latencies.Total)
+	}
+	if snap.Latencies.Mean != float64(200*time.Millisecond) {
+		return errors.Errorf("expected latency mean %v, got %v", float64(200*time.Millisecond), snap.Latencies.Mean)
+	}
+	return nil
+}
+
 func TestCollector_Record_And_Snapshot(t *testing.T) {
 	type args struct {
 		opts    []Option
@@ -94,20 +151,7 @@ func TestCollector_Record_And_Snapshot(t *testing.T) {
 			},
 			CheckFunc: func(t *testing.T, _ test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
 				t.Helper()
-				if got.Err != nil {
-					return got.Err
-				}
-				snap := got.Val
-				if snap.Total != 1 {
-					return errors.Errorf("expected total 1, got %d", snap.Total)
-				}
-				if snap.Errors != 0 {
-					return errors.Errorf("expected errors 0, got %d", snap.Errors)
-				}
-				if snap.Latencies.Total != 1 {
-					return errors.Errorf("expected latencies total 1, got %d", snap.Latencies.Total)
-				}
-				return nil
+				return checkRecordSingleSuccess(got)
 			},
 		},
 		{
@@ -123,17 +167,7 @@ func TestCollector_Record_And_Snapshot(t *testing.T) {
 			},
 			CheckFunc: func(t *testing.T, _ test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
 				t.Helper()
-				if got.Err != nil {
-					return got.Err
-				}
-				snap := got.Val
-				if snap.Total != 1 {
-					return errors.Errorf("expected total 1, got %d", snap.Total)
-				}
-				if snap.Errors != 1 {
-					return errors.Errorf("expected errors 1, got %d", snap.Errors)
-				}
-				return nil
+				return checkRecordSingleError(got)
 			},
 		},
 		{
@@ -147,23 +181,7 @@ func TestCollector_Record_And_Snapshot(t *testing.T) {
 			},
 			CheckFunc: func(t *testing.T, _ test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
 				t.Helper()
-				if got.Err != nil {
-					return got.Err
-				}
-				snap := got.Val
-				if snap.Total != 3 {
-					return errors.Errorf("expected total 3, got %d", snap.Total)
-				}
-				if snap.Errors != 1 {
-					return errors.Errorf("expected errors 1, got %d", snap.Errors)
-				}
-				if snap.Latencies.Total != 3 {
-					return errors.Errorf("expected latencies total 3, got %d", snap.Latencies.Total)
-				}
-				if snap.Latencies.Mean != float64(200*time.Millisecond) {
-					return errors.Errorf("expected latency mean %v, got %v", float64(200*time.Millisecond), snap.Latencies.Mean)
-				}
-				return nil
+				return checkRecordMultipleRequests(got)
 			},
 		},
 	}...); err != nil {
