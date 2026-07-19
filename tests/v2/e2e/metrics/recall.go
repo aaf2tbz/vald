@@ -50,10 +50,7 @@ package metrics
 // ground-truth count) generalized with an explicit k so callers can compare
 // against hdf5 ground-truth rows that are longer than the benchmark's k.
 func CalcRecall(got, truth []int, k int) (recall float64) {
-	effectiveK := k
-	if len(truth) < effectiveK {
-		effectiveK = len(truth)
-	}
+	effectiveK := min(len(truth), k)
 	if effectiveK <= 0 {
 		return 0
 	}
