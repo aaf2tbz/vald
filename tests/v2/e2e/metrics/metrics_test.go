@@ -32,7 +32,7 @@ func TestNewCollector(t *testing.T) {
 		{
 			Name: "initialize with default options",
 			Args: nil,
-			CheckFunc: func(t *testing.T, want test.Result[Collector], got test.Result[Collector]) error {
+			CheckFunc: func(t *testing.T, _ test.Result[Collector], got test.Result[Collector]) error {
 				t.Helper()
 				if got.Err != nil {
 					return got.Err
@@ -48,7 +48,7 @@ func TestNewCollector(t *testing.T) {
 			Args: []Option{
 				WithTimeScale("test_scale", time.Second, 10),
 			},
-			CheckFunc: func(t *testing.T, want test.Result[Collector], got test.Result[Collector]) error {
+			CheckFunc: func(t *testing.T, _ test.Result[Collector], got test.Result[Collector]) error {
 				t.Helper()
 				if got.Err != nil {
 					return got.Err
@@ -92,7 +92,7 @@ func TestCollector_Record_And_Snapshot(t *testing.T) {
 					},
 				},
 			},
-			CheckFunc: func(t *testing.T, want test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
+			CheckFunc: func(t *testing.T, _ test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
 				t.Helper()
 				if got.Err != nil {
 					return got.Err
@@ -121,7 +121,7 @@ func TestCollector_Record_And_Snapshot(t *testing.T) {
 					},
 				},
 			},
-			CheckFunc: func(t *testing.T, want test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
+			CheckFunc: func(t *testing.T, _ test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
 				t.Helper()
 				if got.Err != nil {
 					return got.Err
@@ -145,7 +145,7 @@ func TestCollector_Record_And_Snapshot(t *testing.T) {
 					{Latency: 300 * time.Millisecond, QueueWait: 40 * time.Millisecond},
 				},
 			},
-			CheckFunc: func(t *testing.T, want test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
+			CheckFunc: func(t *testing.T, _ test.Result[*GlobalSnapshot], got test.Result[*GlobalSnapshot]) error {
 				t.Helper()
 				if got.Err != nil {
 					return got.Err
@@ -217,7 +217,7 @@ func TestCollector_Merge(t *testing.T) {
 					{Latency: 200 * time.Millisecond, Err: errors.New("err")},
 				},
 			},
-			CheckFunc: func(t *testing.T, want test.Result[Collector], got test.Result[Collector]) error {
+			CheckFunc: func(t *testing.T, _ test.Result[Collector], got test.Result[Collector]) error {
 				t.Helper()
 				if got.Err != nil {
 					return got.Err
