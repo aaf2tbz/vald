@@ -23,7 +23,7 @@
 // dataset config uses.
 //
 // The x1b branch below eagerly decodes its files into [][]T slices via
-// tests/v2/e2e/dataset/x1b, the same way HDF5ToDataset eagerly reads an
+// tests/v2/e2e/dataset/x1b, the same way hdf5.ToDataset eagerly reads an
 // entire hdf5 file. That is appropriate for the small/medium ann-benchmarks
 // fixtures this package targets, but not for the actual billion-scale
 // SIFT1B/DEEP1B corpora hack/benchmark/internal/assets.loadLargeData streams
@@ -44,7 +44,7 @@ import (
 )
 
 // ToDataset loads cfg into a *hdf5.Dataset, dispatching on the file extension
-// of cfg.Name: ".hdf5"/".h5" is read via hdf5.HDF5ToDataset, while
+// of cfg.Name: ".hdf5"/".h5" is read via hdf5.ToDataset, while
 // ".fvecs"/".bvecs" is read via tests/v2/e2e/dataset/x1b, additionally
 // requiring cfg.Query (same encoding as cfg.Name) and cfg.Neighbors (an
 // ivecs groundtruth file) to be set.
@@ -54,7 +54,7 @@ func ToDataset(cfg *config.Dataset) (*hdf5.Dataset, error) {
 	}
 	switch ext := strings.ToLower(filepath.Ext(cfg.Name)); ext {
 	case ".hdf5", ".h5":
-		return hdf5.HDF5ToDataset(cfg.Name)
+		return hdf5.ToDataset(cfg.Name)
 	case ".fvecs", ".bvecs":
 		return x1bToDataset(cfg, ext)
 	default:
