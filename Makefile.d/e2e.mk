@@ -106,6 +106,12 @@ e2e/readreplica:
 e2e/maxdim:
 	$(call run-e2e-max-dim-test)
 
+# E2E_MAX_DIM_BIT must be 1 ~ 32, mirroring the bit range check in
+# tests/e2e/performance/max_vector_dim_test.go (bit < 1 || maxBit < bit).
+ifneq ($(shell test $(E2E_MAX_DIM_BIT) -ge 1 -a $(E2E_MAX_DIM_BIT) -le 32 2>/dev/null && echo ok),ok)
+$(error E2E_MAX_DIM_BIT must be between 1 and 32, got $(E2E_MAX_DIM_BIT))
+endif
+
 # E2E_MAX_DIM is 2^E2E_MAX_DIM_BIT, except at the uint32 boundary (bit 32)
 # where it is capped to math.MaxUint32, mirroring
 # tests/e2e/performance/max_vector_dim_test.go and

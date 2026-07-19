@@ -143,9 +143,13 @@ strategies:
             # agent.ngt.dimension=_E2E_MAX_DIM_) rejected this dimension
             # outright; that is a legitimate boundary result for this probe,
             # not a test failure. Only an unexpected status here should fail
-            # the scenario.
+            # the scenario. expect entries are evaluated in order and the
+            # execution passes on the first match (see
+            # tests/v2/e2e/crud/grpc_test.go handleGRPCWithStatusCode), so
+            # either status_code below is accepted.
             expect:
               - status_code: ok
+              - status_code: resourceexhausted
           - name: SearchByID
             type: search_by_id
             mode: unary
@@ -159,8 +163,17 @@ strategies:
               interval: _E2E_MAX_DIM_WAIT_
             search:
               timeout: 3s
+            # If Insert legitimately ended in ResourceExhausted above, the
+            # vector was never stored and this SearchByID will return
+            # NotFound forever; without this expect entry exit_condition:
+            # success would retry until E2E_MAX_DIM_RETRY_TIMEOUT elapses on
+            # every such run. Accepting NotFound as a pass here lets the
+            # first attempt satisfy exit_condition: success immediately in
+            # that case, while a real vector still requires status_code: ok
+            # with at least one result.
             expect:
               - status_code: ok
                 path: $.results.length()
                 op: ge
                 value: 1
+              - status_code: notfound

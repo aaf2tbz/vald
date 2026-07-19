@@ -93,9 +93,10 @@ func TestMain(m *testing.M) {
 // to be multiple gigabytes in size for high dimensions).
 func newSyntheticDataset(dim int) *hdf5.Dataset {
 	vec := vector.GaussianDistributedFloat32VectorGenerator(1, dim)[0]
-	return &hdf5.Dataset{
-		Train:     [][]float32{vec},
-		Test:      [][]float32{vec},
-		Neighbors: [][]int{{0}},
-	}
+	// maxLen is set to 1 explicitly (matching the single synthesized vector)
+	// so TrainCycle/TestCycle never fall into InitNoiseFunc's noise
+	// generation path, which HDF5ToDataset-backed datasets only enter once
+	// num exceeds the size of the loaded fixture. This is a single-vector
+	// dimension probe, so noise is an unintended side effect here.
+	return hdf5.New([][]float32{vec}, [][]float32{vec}, [][]int{{0}}, 1)
 }
