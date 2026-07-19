@@ -163,17 +163,19 @@ strategies:
               interval: _E2E_MAX_DIM_WAIT_
             search:
               timeout: 3s
-            # If Insert legitimately ended in ResourceExhausted above, the
-            # vector was never stored and this SearchByID will return
-            # NotFound forever; without this expect entry exit_condition:
-            # success would retry until E2E_MAX_DIM_RETRY_TIMEOUT elapses on
-            # every such run. Accepting NotFound as a pass here lets the
-            # first attempt satisfy exit_condition: success immediately in
-            # that case, while a real vector still requires status_code: ok
-            # with at least one result.
+            # exit_condition: success only stops retrying once fn (see
+            # executeWithRepeats in tests/v2/e2e/crud/strategy_test.go)
+            # returns an error; a successful (nil-error) attempt just falls
+            # through to the top of the loop again, so the loop only ever
+            # ends when the execution timeout above elapses. If Insert
+            # legitimately ended in ResourceExhausted above, the vector was
+            # never stored, so every SearchByID attempt here returns
+            # NotFound and this scenario keeps retrying for the full
+            # _E2E_MAX_DIM_RETRY_TIMEOUT_ before passing on timeout. That is
+            # slower than the real-vector path but still a correct pass:
+            # only an unexpected status here should fail the scenario.
             expect:
               - status_code: ok
                 path: $.results.length()
                 op: ge
                 value: 1
-              - status_code: notfound
