@@ -1,5 +1,3 @@
-//go:build e2e
-
 //
 // Copyright (C) 2019-2026 vdaas.org vald team <vald@vdaas.org>
 //
@@ -16,8 +14,7 @@
 // limitations under the License.
 //
 
-// Package vqueue manages the vector cache layer for reducing FFI overhead for fast Agent processing.
-package service
+package service_test
 
 import (
 	"context"
@@ -78,6 +75,10 @@ func registerVector(ctx context.Context, n service.NGT) error {
 }
 
 func Test_ngt_parallel_delete_and_insert(t *testing.T) {
+	if testing.Short() {
+		t.Skip("The execution of this test takes a lot of time, so it is not performed during the short test\ttest: Test_ngt_parallel_delete_and_insert")
+		return
+	}
 	n, err := service.New(cfg.Bind())
 	if err != nil {
 		t.Fatalf("failed to create ngt service: %v", err)
@@ -165,6 +166,10 @@ func Test_ngt_parallel_delete_and_insert(t *testing.T) {
 }
 
 func Test_ngt_parallel_insert_and_delete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("The execution of this test takes a lot of time, so it is not performed during the short test\ttest: Test_ngt_parallel_insert_and_delete")
+		return
+	}
 	n, err := service.New(cfg.Bind())
 	if err != nil {
 		t.Fatalf("failed to create ngt service: %v", err)
