@@ -1569,6 +1569,8 @@ internal/sync/semaphore/semaphore_test.go
 internal/sync/singleflight/doc.go
 internal/sync/singleflight/singleflight.go
 internal/sync/singleflight/singleflight_test.go
+internal/test/capability.go
+internal/test/capability_test.go
 internal/test/comparator/comparators.go
 internal/test/comparator/doc.go
 internal/test/comparator/standard.go

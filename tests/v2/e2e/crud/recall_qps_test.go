@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/vdaas/vald/internal/log"
+	"github.com/vdaas/vald/internal/test"
 	"github.com/vdaas/vald/tests/v2/e2e/config"
 	"github.com/vdaas/vald/tests/v2/e2e/metrics"
 )
@@ -118,13 +119,11 @@ func logRecallAndQPS(t testing.TB, label string, col metrics.Collector) {
 	// grouping-level lines report collector aggregates merged from their
 	// children (and their ns/op is total child wall time), so compare
 	// benchstat lines only within the same tree depth.
-	if b, ok := t.(*testing.B); ok {
-		if qpsOK {
-			b.ReportMetric(qps, "qps")
-		}
-		if recallOK {
-			b.ReportMetric(mean, "recall@k")
-		}
+	if qpsOK {
+		test.ReportMetric(t, qps, "qps")
+	}
+	if recallOK {
+		test.ReportMetric(t, mean, "recall@k")
 	}
 	switch {
 	case recallOK && qpsOK:

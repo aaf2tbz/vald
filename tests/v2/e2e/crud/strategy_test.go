@@ -152,7 +152,7 @@ func runE2EStrategy[X test.Runner[X]](t X) {
 		t.Log("gRPC target is not configured, skipping gRPC client setup")
 	}
 	t.Run("Run E2E V2 Scenarios", func(tt X) {
-		if err := executeWithTimings(tt, ctx, cfg, cfg.FilePath, "e2e", func(ttt X, ctx context.Context) error {
+		if err := executeWithTimings(tt, ctx, cfg, cfg.FilePath, "e2e", false, func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			for i, st := range cfg.Strategies {
 				col := processStrategy(r, ttt, ctx, i, st)
@@ -183,7 +183,7 @@ func processStrategy[X test.Runner[X]](
 	}
 	col = st.Collector
 	t.Run(fmt.Sprintf("#%d: strategy=%s", idx, st.Name), func(tt X) {
-		if err := executeWithTimings(tt, ctx, st, st.Name, "strategy", func(ttt X, ctx context.Context) error {
+		if err := executeWithTimings(tt, ctx, st, st.Name, "strategy", false, func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			eg, egctx := errgroup.New(ctx)
 			if st.Concurrency > 0 {
@@ -228,7 +228,7 @@ func processOperation[X test.Runner[X]](
 	}
 	col = op.Collector
 	t.Run(fmt.Sprintf("#%d: operation=%s", idx, op.Name), func(tt X) {
-		if err := executeWithTimings(tt, ctx, op, op.Name, "operation", func(ttt X, ctx context.Context) error {
+		if err := executeWithTimings(tt, ctx, op, op.Name, "operation", false, func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			for i, e := range op.Executions {
 				c := processExecution(r, ttt, ctx, strategyName, op.Name, i, e)
@@ -261,7 +261,7 @@ func processExecution[X test.Runner[X]](
 	}
 
 	t.Run(fmt.Sprintf("#%d: execution=%s type=%s mode=%s", idx, e.Name, e.Type, e.Mode), func(tt X) {
-		if err := executeWithTimings(tt, ctx, e, e.Name, "execution", func(ttt X, ctx context.Context) error {
+		if err := executeWithTimings(tt, ctx, e, e.Name, "execution", true, func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			switch e.Type {
 			case config.OpSearch,
@@ -385,7 +385,7 @@ func executeWithTimings[X test.Runner[X], T interface {
 	config.Timing
 	config.Repeater
 }](
-	t X, ctx context.Context, cfg T, name, prefix string, fn func(X, context.Context) error,
+	t X, ctx context.Context, cfg T, name, prefix string, measured bool, fn func(X, context.Context) error,
 ) (err error) {
 	t.Helper()
 	if delay := cfg.GetDelay(); delay != "" {
@@ -412,33 +412,21 @@ func executeWithTimings[X test.Runner[X], T interface {
 		timeoutDur = dur
 	}
 
-	if bb, ok := any(t).(*testing.B); ok && prefix == "execution" {
-		// Benchmark mode: one b.Loop iteration = one full configured
-		// execution pass (including its repeats). b.Loop confines the timer
-		// to the loop body, so the delay above and the wait below are
-		// excluded from the measured window. Strategy/operation levels are
-		// grouping nodes (they call Run) and must not loop here.
-		// Each iteration gets its own fresh timeout window (a single shared
-		// context.WithTimeout would start expiring before iteration 1 and
-		// starve iterations 2+ at -benchtime > 1x), and per-iteration errors
-		// are joined so an early failure is not masked by later successes.
+	if measured && test.IsBenchmark(t) {
+		// Benchmark mode: one measured iteration = one full configured
+		// execution pass (including its repeats). test.Measured drives
+		// test.Loop (b.Loop), which confines the benchmark timer to the loop
+		// body, so the delay above and the wait below stay unmeasured, gives
+		// every iteration a fresh timeout window and joins per-iteration
+		// errors. Only the execution level passes measured=true:
+		// strategy/operation levels are grouping nodes (they call Run) and
+		// must not loop.
 		if timeoutDur > 0 {
 			t.Logf("timeout is set to %s, each benchmark iteration of this %s/%s will stop after %s", timeoutDur, prefix, name, timeoutDur.String())
 		}
-		for bb.Loop() {
-			ierr := func() error {
-				ictx := ctx
-				if timeoutDur > 0 {
-					var cancel context.CancelFunc
-					ictx, cancel = context.WithTimeout(ctx, timeoutDur)
-					defer cancel()
-				}
-				return executeWithRepeats(t, ictx, name, prefix, cfg.GetRepeats(), fn)
-			}()
-			if ierr != nil {
-				err = errors.Join(err, ierr)
-			}
-		}
+		err = test.Measured(ctx, t, timeoutDur, func(ictx context.Context) error {
+			return executeWithRepeats(t, ictx, name, prefix, cfg.GetRepeats(), fn)
+		})
 	} else {
 		if timeoutDur > 0 {
 			t.Logf("timeout is set to %s, this %s/%s will stop after %s", timeoutDur, prefix, name, timeoutDur.String())
