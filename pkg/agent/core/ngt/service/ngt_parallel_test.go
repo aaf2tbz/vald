@@ -100,7 +100,6 @@ func Test_ngt_parallel_delete_and_insert(t *testing.T) {
 
 	for range duplicateIDNum {
 		for i := range int64(maxIDNum) {
-			i := i
 			wg.Add(1)
 			go func() {
 				mu.Lock()
@@ -187,7 +186,6 @@ func Test_ngt_parallel_insert_and_delete(t *testing.T) {
 
 	for range duplicateIDNum {
 		for i := range int64(maxIDNum) {
-			i := i
 			wg.Add(1)
 			errgroup.Go(func() error {
 				mu.Lock()
