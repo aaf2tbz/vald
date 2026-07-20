@@ -30,12 +30,23 @@ import (
 	"github.com/vdaas/vald/internal/test/goleak"
 )
 
-type Case[T, A any] struct {
+// Runner constrains the concrete testing entry types this framework can
+// drive. testing.TB deliberately omits Run (T.Run and B.Run take callbacks
+// of their own concrete type, so no single method signature fits the
+// interface), which is why the constraint is self-referential: X must both
+// behave like testing.TB and spawn subtests of its own type. *testing.T and
+// *testing.B satisfy it; *testing.F does not (it has Fuzz, not Run).
+type Runner[X testing.TB] interface {
+	testing.TB
+	Run(name string, f func(X)) bool
+}
+
+type CaseFor[X Runner[X], T, A any] struct {
 	Want       Result[T]
 	Args       A
-	BeforeFunc BeforeFunc[A]
-	AfterFunc  AfterFunc[T, A]
-	CheckFunc  CheckFunc[T]
+	BeforeFunc BeforeFuncFor[X, A]
+	AfterFunc  AfterFuncFor[X, T, A]
+	CheckFunc  CheckFuncFor[X, T]
 	Name       string
 }
 
@@ -45,13 +56,30 @@ type Result[T any] struct {
 }
 
 type (
-	BeforeFunc[A any]   func(context.Context, *testing.T, A) A
-	AfterFunc[T, A any] func(context.Context, *testing.T, A, T, error) error
-	CheckFunc[T any]    func(tt *testing.T, want Result[T], got Result[T]) error
-	Do[T, A any]        func(*testing.T, A) (T, error)
+	BeforeFuncFor[X Runner[X], A any]   func(context.Context, X, A) A
+	AfterFuncFor[X Runner[X], T, A any] func(context.Context, X, A, T, error) error
+	CheckFuncFor[X Runner[X], T any]    func(tt X, want Result[T], got Result[T]) error
+	DoFor[X Runner[X], T, A any]        func(X, A) (T, error)
 )
 
-func DefaultCheck[T any](tt *testing.T, want Result[T], got Result[T]) error {
+// The historical *testing.T-based names are kept as generic type aliases
+// (Go 1.24+) so existing call sites compile unchanged, alongside the
+// *testing.B instantiations for table-driven benchmarks.
+type (
+	Case[T, A any]      = CaseFor[*testing.T, T, A]
+	BeforeFunc[A any]   = BeforeFuncFor[*testing.T, A]
+	AfterFunc[T, A any] = AfterFuncFor[*testing.T, T, A]
+	CheckFunc[T any]    = CheckFuncFor[*testing.T, T]
+	Do[T, A any]        = DoFor[*testing.T, T, A]
+
+	BenchmarkCase[T, A any]      = CaseFor[*testing.B, T, A]
+	BenchmarkBeforeFunc[A any]   = BeforeFuncFor[*testing.B, A]
+	BenchmarkAfterFunc[T, A any] = AfterFuncFor[*testing.B, T, A]
+	BenchmarkCheckFunc[T any]    = CheckFuncFor[*testing.B, T]
+	BenchmarkDo[T, A any]        = DoFor[*testing.B, T, A]
+)
+
+func DefaultCheck[X Runner[X], T any](tt X, want Result[T], got Result[T]) error {
 	tt.Helper()
 	if !errors.Is(got.Err, want.Err) {
 		return errors.Errorf("got_error: \"%#v\",\n\t\t\t\twant: \"%#v\"", got.Err, want.Err)
@@ -73,7 +101,9 @@ func DefaultCheck[T any](tt *testing.T, want Result[T], got Result[T]) error {
 	return nil
 }
 
-func Run[T, A any](ctx context.Context, t *testing.T, do Do[T, A], tests ...Case[T, A]) error {
+func Run[X Runner[X], T, A any](
+	ctx context.Context, t X, do DoFor[X, T, A], tests ...CaseFor[X, T, A],
+) error {
 	t.Helper()
 	ech := make(chan error, len(tests))
 	defer close(ech)
@@ -88,7 +118,7 @@ func Run[T, A any](ctx context.Context, t *testing.T, do Do[T, A], tests ...Case
 			return err
 		default:
 			test := tc
-			t.Run(test.Name, func(tt *testing.T) {
+			t.Run(test.Name, func(tt X) {
 				tt.Helper()
 				err := safety.RecoverFunc(func() error {
 					defer goleak.VerifyNone(tt, goleak.IgnoreCurrent())
@@ -98,7 +128,7 @@ func Run[T, A any](ctx context.Context, t *testing.T, do Do[T, A], tests ...Case
 					}
 					checkFunc := test.CheckFunc
 					if checkFunc == nil {
-						checkFunc = DefaultCheck
+						checkFunc = DefaultCheck[X, T]
 					}
 					got, err := do(tt, args)
 					if err = checkFunc(tt, test.Want, Result[T]{
