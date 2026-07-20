@@ -129,22 +129,25 @@ func SetBytes[X testing.TB](t X, n int64) {
 	}
 }
 
-// ResetTimer, StartTimer and StopTimer control the benchmark timer when t
-// supports it (no-ops otherwise), so generic setup/teardown code can keep
-// itself out of the measured window without knowing whether it runs under
-// a test or a benchmark.
+// ResetTimer zeroes the benchmark timer when t supports it (no-op
+// otherwise), so generic setup code can keep itself out of the measured
+// window without knowing whether it runs under a test or a benchmark.
 func ResetTimer[X testing.TB](t X) {
 	if r, ok := unwrap(t).(interface{ ResetTimer() }); ok {
 		r.ResetTimer()
 	}
 }
 
+// StartTimer resumes the benchmark timer when t supports it (no-op
+// otherwise); pair it with StopTimer around unmeasured teardown work.
 func StartTimer[X testing.TB](t X) {
 	if r, ok := unwrap(t).(interface{ StartTimer() }); ok {
 		r.StartTimer()
 	}
 }
 
+// StopTimer pauses the benchmark timer when t supports it (no-op
+// otherwise), keeping generic teardown work out of the measured window.
 func StopTimer[X testing.TB](t X) {
 	if r, ok := unwrap(t).(interface{ StopTimer() }); ok {
 		r.StopTimer()
