@@ -1606,6 +1606,7 @@ internal/test/data/vector/noise/option.go
 internal/test/data/vector/noise/option_test.go
 internal/test/doc.go
 internal/test/framework.go
+internal/test/framework_test.go
 internal/test/goleak/doc.go
 internal/test/goleak/goleak.go
 internal/test/goleak/goleak_test.go
