@@ -385,11 +385,7 @@ func executeWithTimings[X test.Runner[X], T interface {
 	config.Timing
 	config.Repeater
 }](
-	t X,
-	ctx context.Context,
-	cfg T,
-	name, prefix string,
-	fn func(X, context.Context) error,
+	t X, ctx context.Context, cfg T, name, prefix string, fn func(X, context.Context) error,
 ) (err error) {
 	t.Helper()
 	if delay := cfg.GetDelay(); delay != "" {
