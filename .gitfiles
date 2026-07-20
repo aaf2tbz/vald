@@ -1612,7 +1612,6 @@ internal/test/framework_test.go
 internal/test/goleak/doc.go
 internal/test/goleak/goleak.go
 internal/test/goleak/goleak_test.go
-internal/test/node.go
 internal/test/mock/client/discoverer_client_mock.go
 internal/test/mock/client/doc.go
 internal/test/mock/client/mirror_client_mock.go
@@ -1627,6 +1626,7 @@ internal/test/mock/k8s/doc.go
 internal/test/mock/k8s/fake.go
 internal/test/mock/k8s/reconciler.go
 internal/test/mock/server_stream.go
+internal/test/node.go
 internal/test/testdata.go
 internal/test/testdata_test.go
 internal/test/testify/doc.go
