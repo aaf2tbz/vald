@@ -20,6 +20,7 @@
 package crud
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/vdaas/vald/internal/info"
@@ -42,7 +43,6 @@ func TestMain(m *testing.M) {
 	var err error
 	p, fail, err := params.New(
 		params.WithName("vald/e2e"),
-		params.WithOverrideDefault(true),
 		params.WithArgumentFilters(
 			func(s string) bool {
 				return strings.HasPrefix(s, "-test.")
@@ -51,6 +51,26 @@ func TestMain(m *testing.M) {
 	).Parse()
 	if fail || err != nil {
 		log.Fatalf("failed to parse the parameters: %v", err)
+	}
+	// params filtered the -test.* arguments out of its own flag set above, so
+	// they must be fed to testing's real flag.CommandLine (its flags are
+	// already registered by testing.MainStart before TestMain runs) for
+	// -test.run/-test.bench/-test.timeout/-test.v/... to take effect: m.Run
+	// only calls flag.Parse when flag.Parsed() is still false, and the
+	// previously used params.WithOverrideDefault(true) swapped
+	// flag.CommandLine for params' already-parsed set, which silently left
+	// every -test.* flag at its zero value (all tests always ran, no
+	// benchmark could ever be selected and -timeout was never applied).
+	testArgs := make([]string, 0, len(os.Args[1:]))
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "-test.") {
+			testArgs = append(testArgs, arg)
+		}
+	}
+	// flag.CommandLine uses flag.ExitOnError, so a malformed -test.* flag
+	// exits inside Parse itself; this branch only fires for flag.ErrHelp.
+	if err := flag.CommandLine.Parse(testArgs); err != nil {
+		log.Fatalf("failed to parse -test.* flags: %v", err)
 	}
 	if p.ShowVersion() {
 		log.Info(info.Version)
