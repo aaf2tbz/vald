@@ -19,6 +19,20 @@
 e2e/v2:
 	$(call run-v2-e2e-crud-test,-run TestE2EStrategy)
 
+# One benchmark iteration already performs an execution's full configured
+# request load (num/parallelism/qps), so a fixed small iteration count is the
+# meaningful default; raise it (e.g. 3x) to let benchstat compute variance.
+# Each execution is looped independently at >1x, so state-dependent steps
+# (e.g. create_index right after insert) can legitimately fail on later
+# iterations unless the scenario's expect also lists the status codes such a
+# re-execution returns (e.g. failedprecondition for an empty uncommitted queue).
+E2E_BENCH_TIME ?= 1x
+
+.PHONY: e2e/v2/bench
+## run e2e scenario as Go benchmarks (BenchmarkE2EStrategy, one execution pass per iteration)
+e2e/v2/bench:
+	$(call run-v2-e2e-crud-test,-run '^$$' -bench BenchmarkE2EStrategy -benchtime $(E2E_BENCH_TIME))
+
 .PHONY: e2e/v2/operator
 ## run e2e/v2 for vald-operator
 e2e/v2/operator:

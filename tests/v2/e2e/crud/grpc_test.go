@@ -51,20 +51,20 @@ type (
 	// newStream is a generic type for functions that create a new gRPC stream.
 	newStream[S grpc.ClientStream] func(ctx context.Context, opts ...grpc.CallOption) (S, error)
 	// newRequest is a function type that creates a new request.
-	newRequest[Q proto.Message] func(t *testing.T, idx uint64, id string, vec []float32, e *config.Execution) Q
+	newRequest[Q proto.Message] func(t testing.TB, idx uint64, id string, vec []float32, e *config.Execution) Q
 	// newMultiRequest is a generic type for functions that build bulk search requests.
-	newMultiRequest[R, S proto.Message] func(t *testing.T, reqs ...R) S
+	newMultiRequest[R, S proto.Message] func(t testing.TB, reqs ...R) S
 	// callback is a function type that processes the response and error from a gRPC call.
-	callback[R proto.Message] func(t *testing.T, idx uint64, res R, err error) bool
+	callback[R proto.Message] func(t testing.TB, idx uint64, res R, err error) bool
 )
 
-func passThrough[M proto.Message](t *testing.T, msg M) any {
+func passThrough[M proto.Message](t testing.TB, msg M) any {
 	t.Helper()
 	return msg
 }
 
 func emptyCallback[M proto.Message](name string) callback[M] {
-	return func(t *testing.T, _ uint64, _ M, err error) bool {
+	return func(t testing.TB, _ uint64, _ M, err error) bool {
 		t.Helper()
 		if err != nil {
 			log.Errorf("%s operation returned error: %v", name, err)
@@ -74,8 +74,8 @@ func emptyCallback[M proto.Message](name string) callback[M] {
 	}
 }
 
-func printCallback[M proto.Message](unwrap func(t *testing.T, msg M) any) callback[M] {
-	return func(t *testing.T, idx uint64, msg M, err error) bool {
+func printCallback[M proto.Message](unwrap func(t testing.TB, msg M) any) callback[M] {
+	return func(t testing.TB, idx uint64, msg M, err error) bool {
 		t.Helper()
 		if err != nil {
 			log.Errorf("idx: %d operation returned error: %v", idx, err)
@@ -118,7 +118,7 @@ func compare(a, b any) (float64, float64, bool) {
 }
 
 func handleGRPCWithStatusCode(
-	t *testing.T, err error, code codes.Code, res proto.Message, plan *config.Execution,
+	t testing.TB, err error, code codes.Code, res proto.Message, plan *config.Execution,
 ) error {
 	t.Helper()
 	if len(plan.Expect) == 0 {
@@ -222,7 +222,7 @@ type streamStatusResponse interface {
 // If the error is expected, it logs a message; otherwise, it logs an error.
 // If the results do not match, it logs an error.
 func handleGRPCCall(
-	t *testing.T, err error, res proto.Message, plan *config.Execution,
+	t testing.TB, err error, res proto.Message, plan *config.Execution,
 ) (code codes.Code, msg string, rerr error) {
 	t.Helper()
 	switch {
@@ -253,7 +253,7 @@ func handleGRPCCall(
 }
 
 func single[Q, R proto.Message](
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	idx uint64,
 	plan *config.Execution,
@@ -301,7 +301,7 @@ func single[Q, R proto.Message](
 }
 
 func unary[Q, R proto.Message](
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	data iter.Cycle[[][]float32, []float32],
 	plan *config.Execution,
@@ -330,7 +330,7 @@ func unary[Q, R proto.Message](
 }
 
 func multi[Q, M, R proto.Message](
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	data iter.Cycle[[][]float32, []float32],
 	plan *config.Execution,
@@ -378,7 +378,7 @@ func multi[Q, M, R proto.Message](
 }
 
 func stream[Q, R proto.Message, S grpc.TypedClientStream[Q, R]](
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	data iter.Cycle[[][]float32, []float32],
 	plan *config.Execution,

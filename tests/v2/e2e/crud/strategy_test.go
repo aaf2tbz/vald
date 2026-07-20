@@ -34,6 +34,7 @@ import (
 	"github.com/vdaas/vald/internal/log"
 	"github.com/vdaas/vald/internal/net/grpc"
 	"github.com/vdaas/vald/internal/sync/errgroup"
+	"github.com/vdaas/vald/internal/test"
 	"github.com/vdaas/vald/tests/v2/e2e/config"
 	"github.com/vdaas/vald/tests/v2/e2e/metrics"
 	"google.golang.org/grpc/metadata"
@@ -48,6 +49,22 @@ type runner struct {
 }
 
 func TestE2EStrategy(t *testing.T) {
+	runE2EStrategy(t)
+}
+
+// BenchmarkE2EStrategy drives the exact same scenario configuration as
+// TestE2EStrategy through the benchmark harness: every strategy, operation
+// and execution becomes a b.Run sub-benchmark, and each execution-level pass
+// is wrapped in b.Loop (see executeWithTimings) so ns/op reports the time of
+// one full configured execution (including its repeats), while the scenario's
+// delay/wait sleeps stay outside the measured window. Run it with
+// -benchtime 1x (or a small fixed count) since one iteration already
+// performs the execution's full configured request load.
+func BenchmarkE2EStrategy(b *testing.B) {
+	runE2EStrategy(b)
+}
+
+func runE2EStrategy[X test.Runner[X]](t X) {
 	if cfg == nil || cfg.Strategies == nil {
 		t.Fatal("test setting or strategies is nil, please add test configuration yaml file by -config option")
 	}
@@ -134,11 +151,11 @@ func TestE2EStrategy(t *testing.T) {
 		// scenarios such as operator verification only use kubernetes/http operations and do not require a gRPC target.
 		t.Log("gRPC target is not configured, skipping gRPC client setup")
 	}
-	t.Run("Run E2E V2 Scenarios", func(tt *testing.T) {
-		if err := executeWithTimings(tt, ctx, cfg, cfg.FilePath, "e2e", func(ttt *testing.T, ctx context.Context) error {
+	t.Run("Run E2E V2 Scenarios", func(tt X) {
+		if err := executeWithTimings(tt, ctx, cfg, cfg.FilePath, "e2e", func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			for i, st := range cfg.Strategies {
-				col := r.processStrategy(ttt, ctx, i, st)
+				col := processStrategy(r, ttt, ctx, i, st)
 				if cfg.Metrics != nil && cfg.Metrics.Enabled && cfg.Collector != nil && col != nil {
 					cfg.Strategies[i].Collector = col
 					if err := col.MergeInto(cfg.Collector); err != nil {
@@ -157,16 +174,16 @@ func TestE2EStrategy(t *testing.T) {
 	})
 }
 
-func (r *runner) processStrategy(
-	t *testing.T, ctx context.Context, idx int, st *config.Strategy,
+func processStrategy[X test.Runner[X]](
+	r *runner, t X, ctx context.Context, idx int, st *config.Strategy,
 ) (col metrics.Collector) {
 	t.Helper()
 	if r == nil || st == nil {
 		return nil
 	}
 	col = st.Collector
-	t.Run(fmt.Sprintf("#%d: strategy=%s", idx, st.Name), func(tt *testing.T) {
-		if err := executeWithTimings(tt, ctx, st, st.Name, "strategy", func(ttt *testing.T, ctx context.Context) error {
+	t.Run(fmt.Sprintf("#%d: strategy=%s", idx, st.Name), func(tt X) {
+		if err := executeWithTimings(tt, ctx, st, st.Name, "strategy", func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			eg, egctx := errgroup.New(ctx)
 			if st.Concurrency > 0 {
@@ -179,7 +196,7 @@ func (r *runner) processStrategy(
 				if op != nil {
 					i, op := i, op
 					eg.Go(func() error {
-						c := r.processOperation(ttt, egctx, st.Name, i, op)
+						c := processOperation(r, ttt, egctx, st.Name, i, op)
 						if st.Metrics != nil && st.Metrics.Enabled && col != nil && c != nil {
 							st.Operations[i].Collector = c
 							if err := c.MergeInto(col); err != nil {
@@ -202,19 +219,19 @@ func (r *runner) processStrategy(
 	return col
 }
 
-func (r *runner) processOperation(
-	t *testing.T, ctx context.Context, strategyName string, idx int, op *config.Operation,
+func processOperation[X test.Runner[X]](
+	r *runner, t X, ctx context.Context, strategyName string, idx int, op *config.Operation,
 ) (col metrics.Collector) {
 	t.Helper()
 	if r == nil || op == nil {
 		return nil
 	}
 	col = op.Collector
-	t.Run(fmt.Sprintf("#%d: operation=%s", idx, op.Name), func(tt *testing.T) {
-		if err := executeWithTimings(tt, ctx, op, op.Name, "operation", func(ttt *testing.T, ctx context.Context) error {
+	t.Run(fmt.Sprintf("#%d: operation=%s", idx, op.Name), func(tt X) {
+		if err := executeWithTimings(tt, ctx, op, op.Name, "operation", func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			for i, e := range op.Executions {
-				c := r.processExecution(ttt, ctx, strategyName, op.Name, i, e)
+				c := processExecution(r, ttt, ctx, strategyName, op.Name, i, e)
 				if op.Metrics != nil && op.Metrics.Enabled && col != nil && c != nil {
 					op.Executions[i].Collector = c
 					if err := c.MergeInto(col); err != nil {
@@ -235,16 +252,16 @@ func (r *runner) processOperation(
 	return col
 }
 
-func (r *runner) processExecution(
-	t *testing.T, ctx context.Context, strategyName, opName string, idx int, e *config.Execution,
+func processExecution[X test.Runner[X]](
+	r *runner, t X, ctx context.Context, strategyName, opName string, idx int, e *config.Execution,
 ) (col metrics.Collector) {
 	t.Helper()
 	if r == nil || e == nil {
 		return nil
 	}
 
-	t.Run(fmt.Sprintf("#%d: execution=%s type=%s mode=%s", idx, e.Name, e.Type, e.Mode), func(tt *testing.T) {
-		if err := executeWithTimings(tt, ctx, e, e.Name, "execution", func(ttt *testing.T, ctx context.Context) error {
+	t.Run(fmt.Sprintf("#%d: execution=%s type=%s mode=%s", idx, e.Name, e.Type, e.Mode), func(tt X) {
+		if err := executeWithTimings(tt, ctx, e, e.Name, "execution", func(ttt X, ctx context.Context) error {
 			ttt.Helper()
 			switch e.Type {
 			case config.OpSearch,
@@ -364,15 +381,15 @@ func (r *runner) processExecution(
 	return e.Collector
 }
 
-func executeWithTimings[T interface {
+func executeWithTimings[X test.Runner[X], T interface {
 	config.Timing
 	config.Repeater
 }](
-	t *testing.T,
+	t X,
 	ctx context.Context,
 	cfg T,
 	name, prefix string,
-	fn func(*testing.T, context.Context) error,
+	fn func(X, context.Context) error,
 ) (err error) {
 	t.Helper()
 	if delay := cfg.GetDelay(); delay != "" {
@@ -390,20 +407,51 @@ func executeWithTimings[T interface {
 		}
 	}
 
+	var timeoutDur time.Duration
 	if timeout := cfg.GetTimeout(); timeout != "" {
-		dur, err := timeout.Duration()
-		if err != nil {
-			t.Errorf("failed to parse timeout duration: %s, error: %v", timeout, err)
+		dur, terr := timeout.Duration()
+		if terr != nil {
+			t.Errorf("failed to parse timeout duration: %s, error: %v", timeout, terr)
 		}
-		if dur > 0 {
-			t.Logf("timeout is set to %s, this %s/%s will stop after %s", timeout, prefix, name, dur.String())
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, dur)
-			defer cancel()
-		}
+		timeoutDur = dur
 	}
 
-	err = executeWithRepeats(t, ctx, name, prefix, cfg.GetRepeats(), fn)
+	if bb, ok := any(t).(*testing.B); ok && prefix == "execution" {
+		// Benchmark mode: one b.Loop iteration = one full configured
+		// execution pass (including its repeats). b.Loop confines the timer
+		// to the loop body, so the delay above and the wait below are
+		// excluded from the measured window. Strategy/operation levels are
+		// grouping nodes (they call Run) and must not loop here.
+		// Each iteration gets its own fresh timeout window (a single shared
+		// context.WithTimeout would start expiring before iteration 1 and
+		// starve iterations 2+ at -benchtime > 1x), and per-iteration errors
+		// are joined so an early failure is not masked by later successes.
+		if timeoutDur > 0 {
+			t.Logf("timeout is set to %s, each benchmark iteration of this %s/%s will stop after %s", timeoutDur, prefix, name, timeoutDur.String())
+		}
+		for bb.Loop() {
+			ierr := func() error {
+				ictx := ctx
+				if timeoutDur > 0 {
+					var cancel context.CancelFunc
+					ictx, cancel = context.WithTimeout(ctx, timeoutDur)
+					defer cancel()
+				}
+				return executeWithRepeats(t, ictx, name, prefix, cfg.GetRepeats(), fn)
+			}()
+			if ierr != nil {
+				err = errors.Join(err, ierr)
+			}
+		}
+	} else {
+		if timeoutDur > 0 {
+			t.Logf("timeout is set to %s, this %s/%s will stop after %s", timeoutDur, prefix, name, timeoutDur.String())
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeoutDur)
+			defer cancel()
+		}
+		err = executeWithRepeats(t, ctx, name, prefix, cfg.GetRepeats(), fn)
+	}
 
 	if wait := cfg.GetWait(); wait != "" {
 		dur, werr := wait.Duration()
@@ -424,12 +472,12 @@ func executeWithTimings[T interface {
 	return err
 }
 
-func executeWithRepeats(
-	t *testing.T,
+func executeWithRepeats[X test.Runner[X]](
+	t X,
 	ctx context.Context,
 	name, prefix string,
 	repeats *config.Repeats,
-	fn func(*testing.T, context.Context) error,
+	fn func(X, context.Context) error,
 ) (err error) {
 	t.Helper()
 	if repeats != nil && repeats.Enabled {
@@ -500,7 +548,7 @@ func executeWithRepeats(
 }
 
 func newClient(
-	t *testing.T, ctx context.Context, meta map[string]string,
+	t testing.TB, ctx context.Context, meta map[string]string,
 ) (client vald.Client, mctx context.Context, err error) {
 	t.Helper()
 	if cfg == nil || cfg.Target == nil {

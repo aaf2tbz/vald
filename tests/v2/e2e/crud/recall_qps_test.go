@@ -103,7 +103,7 @@ func qpsFromSnapshot(snap *metrics.GlobalSnapshot) (qps float64, ok bool) {
 // while a Search execution configured with the recall custom counters has
 // both). It is safe to call for any execution's Collector, including ones
 // where neither metric applies (in which case it logs nothing).
-func logRecallAndQPS(t *testing.T, label string, col metrics.Collector) {
+func logRecallAndQPS(t testing.TB, label string, col metrics.Collector) {
 	t.Helper()
 	if col == nil {
 		return
@@ -111,6 +111,21 @@ func logRecallAndQPS(t *testing.T, label string, col metrics.Collector) {
 	snap := col.GlobalSnapshot()
 	qps, qpsOK := qpsFromSnapshot(snap)
 	mean, samples, recallOK := meanRecall(col)
+	// In benchmark mode (BenchmarkE2EStrategy), surface the scenario metrics
+	// on the sub-benchmark's own result line so they show up next to ns/op
+	// in benchstat-compatible output. Note that this is called at the
+	// operation/strategy grouping levels as well as at execution leaves:
+	// grouping-level lines report collector aggregates merged from their
+	// children (and their ns/op is total child wall time), so compare
+	// benchstat lines only within the same tree depth.
+	if b, ok := t.(*testing.B); ok {
+		if qpsOK {
+			b.ReportMetric(qps, "qps")
+		}
+		if recallOK {
+			b.ReportMetric(mean, "recall@k")
+		}
+	}
 	switch {
 	case recallOK && qpsOK:
 		log.Infof("%s: recall@k=%.4f (samples=%d), QPS=%.2f (requests=%d)", label, mean, samples, qps, snap.Total)
