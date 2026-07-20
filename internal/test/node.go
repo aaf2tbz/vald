@@ -28,6 +28,9 @@ import "testing"
 // passed to anything expecting a testing.TB and all TB methods promote)
 // and Run spawns subtests/sub-benchmarks of the same underlying concrete
 // type, handing each child a fresh Node.
+//
+// The zero value is invalid (its embedded testing.TB is nil); always
+// construct a Node via NewNode.
 type Node struct {
 	testing.TB
 	run func(name string, fn func(Node)) bool

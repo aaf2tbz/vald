@@ -130,6 +130,35 @@ func TestCapabilities_B(t *testing.T) {
 	}
 }
 
+// selfWrapper is a pathological testing.TB wrapper whose Unwrap returns
+// itself, exercising unwrap's depth bound: the resolver must terminate and
+// hand back a sane non-nil testing.TB instead of spinning.
+type selfWrapper struct {
+	testing.TB
+}
+
+func (w *selfWrapper) Unwrap() testing.TB { return w }
+
+func TestUnwrapDepthBound(t *testing.T) {
+	w := &selfWrapper{TB: t}
+	got := unwrap(w)
+	if got == nil {
+		t.Fatal("unwrap must never return nil")
+	}
+	if _, ok := got.(*selfWrapper); !ok {
+		t.Errorf("unwrap of a self-returning wrapper must fail safe with the wrapper itself, got %T", got)
+	}
+	if IsBenchmark(w) {
+		t.Error("IsBenchmark must stay false for a wrapper that never resolves to a benchmark")
+	}
+	// Loop must still fall back to running the body exactly once.
+	var runs int
+	Loop(w, func() { runs++ })
+	if runs != 1 {
+		t.Errorf("Loop through an unresolvable wrapper must run once, ran %d times", runs)
+	}
+}
+
 // TestNode verifies the type-erasure contract: NewNode captures the
 // concrete Runner type exactly once, Run keeps spawning correctly-typed
 // children arbitrarily deep, a Node is a valid testing.TB, and every
