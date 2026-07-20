@@ -58,7 +58,7 @@ type Result[T any] struct {
 type (
 	BeforeFuncFor[X Runner[X], A any]   func(context.Context, X, A) A
 	AfterFuncFor[X Runner[X], T, A any] func(context.Context, X, A, T, error) error
-	CheckFuncFor[X Runner[X], T any]    func(tt X, want Result[T], got Result[T]) error
+	CheckFuncFor[X Runner[X], T any]    func(tt X, want, got Result[T]) error
 	DoFor[X Runner[X], T, A any]        func(X, A) (T, error)
 )
 
@@ -79,7 +79,7 @@ type (
 	BenchmarkDo[T, A any]        = DoFor[*testing.B, T, A]
 )
 
-func DefaultCheck[X Runner[X], T any](tt X, want Result[T], got Result[T]) error {
+func DefaultCheck[X Runner[X], T any](tt X, want, got Result[T]) error {
 	tt.Helper()
 	if !errors.Is(got.Err, want.Err) {
 		return errors.Errorf("got_error: \"%#v\",\n\t\t\t\twant: \"%#v\"", got.Err, want.Err)
@@ -97,6 +97,37 @@ func DefaultCheck[X Runner[X], T any](tt X, want Result[T], got Result[T]) error
 			ws = fmt.Sprintf("%#v", want.Val)
 		}
 		return errors.Errorf("got: \"%s\",\n\t\t\t\twant: \"%s\"", gs, ws)
+	}
+	return nil
+}
+
+// runCase executes a single Case: before hook, do, check and after hook,
+// with goroutine-leak verification scoped to the case.
+func runCase[X Runner[X], T, A any](
+	ctx context.Context, tt X, do DoFor[X, T, A], test CaseFor[X, T, A],
+) error {
+	tt.Helper()
+	defer goleak.VerifyNone(tt, goleak.IgnoreCurrent())
+	args := test.Args
+	if test.BeforeFunc != nil {
+		args = test.BeforeFunc(ctx, tt, args)
+	}
+	checkFunc := test.CheckFunc
+	if checkFunc == nil {
+		checkFunc = DefaultCheck[X, T]
+	}
+	got, err := do(tt, args)
+	if err = checkFunc(tt, test.Want, Result[T]{
+		Val: got,
+		Err: err,
+	}); err != nil {
+		return err
+	}
+	if test.AfterFunc != nil {
+		err = test.AfterFunc(ctx, tt, args, got, err)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -121,29 +152,7 @@ func Run[X Runner[X], T, A any](
 			t.Run(test.Name, func(tt X) {
 				tt.Helper()
 				err := safety.RecoverFunc(func() error {
-					defer goleak.VerifyNone(tt, goleak.IgnoreCurrent())
-					args := test.Args
-					if test.BeforeFunc != nil {
-						args = test.BeforeFunc(ctx, tt, args)
-					}
-					checkFunc := test.CheckFunc
-					if checkFunc == nil {
-						checkFunc = DefaultCheck[X, T]
-					}
-					got, err := do(tt, args)
-					if err = checkFunc(tt, test.Want, Result[T]{
-						Val: got,
-						Err: err,
-					}); err != nil {
-						return err
-					}
-					if test.AfterFunc != nil {
-						err = test.AfterFunc(ctx, tt, args, got, err)
-						if err != nil {
-							return err
-						}
-					}
-					return nil
+					return runCase(ctx, tt, do, test)
 				})()
 				if err != nil {
 					select {

@@ -60,9 +60,9 @@ func recordParallel(b *testing.B, c Collector) {
 		for pb.Next() {
 			rr := GetRequestResult()
 			// Random latency between 1ms and 101ms
-			rr.Latency = time.Millisecond + time.Duration(rand.N(int64(100*time.Millisecond)))
+			rr.Latency = time.Millisecond + time.Duration(rand.N(int64(100*time.Millisecond))) // skipcq: GSC-G404
 			// Random status code (0-19)
-			rr.Status = codes.Code(rand.N(uint32(MaxGRPCCodes)))
+			rr.Status = codes.Code(rand.N(uint32(MaxGRPCCodes))) // skipcq: GSC-G404
 
 			c.Record(ctx, 0, rr)
 
@@ -85,8 +85,8 @@ func snapshot(b *testing.B, c Collector) {
 	preFillCount := 100_000
 	for range preFillCount {
 		rr := GetRequestResult()
-		rr.Latency = time.Millisecond + time.Duration(rand.N(int64(100*time.Millisecond)))
-		rr.Status = codes.Code(rand.N(uint32(MaxGRPCCodes)))
+		rr.Latency = time.Millisecond + time.Duration(rand.N(int64(100*time.Millisecond))) // skipcq: GSC-G404
+		rr.Status = codes.Code(rand.N(uint32(MaxGRPCCodes)))                               // skipcq: GSC-G404
 		c.Record(ctx, 0, rr)
 		PutRequestResult(rr)
 	}
@@ -131,9 +131,9 @@ func recordWithBackgroundSnapshot(b *testing.B, c Collector) {
 		for pb.Next() {
 			rr := GetRequestResult()
 			// Random latency between 1ms and 101ms
-			rr.Latency = time.Millisecond + time.Duration(rand.N(int64(100*time.Millisecond)))
+			rr.Latency = time.Millisecond + time.Duration(rand.N(int64(100*time.Millisecond))) // skipcq: GSC-G404
 			// Random status code (0-19)
-			rr.Status = codes.Code(rand.N(uint32(MaxGRPCCodes)))
+			rr.Status = codes.Code(rand.N(uint32(MaxGRPCCodes))) // skipcq: GSC-G404
 
 			c.Record(ctx, 0, rr)
 
