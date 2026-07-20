@@ -13,45 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# This strategy config targets a Vald cluster whose Agent is backed by the
-# FAISS core implementation (pkg/agent/core/faiss, deployed via
-# charts/vald/templates/agent/faiss with agent.algorithm=faiss).
-# The gRPC Vald API client (tests/v2/e2e/config, tests/v2/e2e/crud) is
-# identical to the NGT strategies (see unary_crud.yaml) -- FAISS is purely a
-# different Agent deployment (different Helm values / image), not a
-# different client protocol, so no config schema change is needed here.
-#
-# FAISS-specific considerations baked into this file:
-#   - pkg/agent/core/faiss/handler/grpc does NOT implement the following
-#     gRPC methods that the NGT agent (pkg/agent/core/ngt/handler/grpc)
-#     implements: IndexProperty, IndexDetail, IndexStatistics,
-#     IndexStatisticsDetail, RemoveByTimestamp, and the object Timestamp
-#     (GetTimestamp) RPC. Calling any of these `type:` operations
-#     (index_property / index_detail / index_statistics /
-#     index_statistics_detail / remove_by_timestamp / timestamp) against a
-#     FAISS-only cluster returns codes.Unimplemented from the Agent, fanned
-#     out through the LB gateway. They are therefore intentionally omitted
-#     below (or replaced with the equivalent-purpose `index_info` /
-#     `remove` operations that FAISS does support).
-#   - FAISS index build is IVFPQ-style clustering (see
-#     charts/vald/values.yaml agent.faiss.nlist/m/nbits_per_idx), not NGT's
-#     incremental graph build. Cluster training requires a minimum number
-#     of vectors (nlist is 100 by default, so training needs at least a few
-#     thousand vectors) before CreateIndex/auto-indexing can succeed, so
-#     the Insert count driving this strategy (_E2E_INSERT_COUNT_) must stay
-#     comfortably above that threshold (the e2e/v2/actions/run/faiss
-#     Makefile target and the e2e.v2 GitHub Actions workflow both override
-#     E2E_INSERT_COUNT to 10000, well above the default nlist of 100,
-#     satisfying this).
-#   - The post-insert wait/retry budget below matches the NGT unary_crud.yaml
-#     values; FAISS auto-indexing is governed by
-#     agent.faiss.auto_index_duration_limit / auto_index_check_duration
-#     (chart defaults: 24h / 30m) which are far longer than NGT's defaults,
-#     so deployments that rely on FAISS's own auto-index timer (rather than
-#     an explicit CreateIndex/Flush call) must raise
-#     retry_until_success_timeout accordingly. This strategy performs an
-#     explicit Flush before checking IndexInfo, so it does not depend on
-#     FAISS's auto-index timer.
 time_zone: UTC
 logging:
   format: raw

@@ -23,11 +23,11 @@ edition = "2024"
 [dependencies]
 algorithm = { version = "0.1.0", path = "../../libs/algorithm" }
 qbg = { version = "0.1.0", path = "../../libs/algorithms/qbg" }
-anyhow = "1.0.103"
+anyhow = "1.0.104"
 chrono = "0.4.45"
 config = "0.15.25"
 flexi_logger = "0.31"
-futures = "0.3.32"
+futures = "0.3.33"
 http = "1.4.2"
 log = "0.4"
 opentelemetry = { version = "0.32.0" }

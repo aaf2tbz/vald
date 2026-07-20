@@ -13,21 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-#
-# max_vector_dim.yaml probes whether a Vald cluster deployed with
-# `agent.ngt.dimension=_E2E_MAX_DIM_` can accept and serve a single vector of
-# that exact dimension. It is the config-based counterpart of
-# tests/e2e/performance/max_vector_dim_test.go: it inserts exactly one
-# synthetically generated vector (dataset.dimension, no HDF5 fixture is
-# required) and then retries SearchByID until the vector becomes searchable
-# (index build finished) or the retry budget is exhausted.
-#
-# The cluster itself must already be deployed with a matching
-# `agent.ngt.dimension`; redeploying the cluster with a new dimension for
-# each candidate bit and deciding whether to keep growing the dimension is
-# orchestration performed by the caller (see Makefile.d/e2e.mk
-# `e2e/v2/maxdim` and, today, `.github/workflows/e2e-max-dim.yaml`), not by
-# this scenario file.
 time_zone: UTC
 logging:
   format: raw

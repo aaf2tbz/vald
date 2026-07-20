@@ -51,7 +51,7 @@ const (
 )
 
 func registerVector(ctx context.Context, n service.NGT) error {
-	for i := int64(0); i < maxIDNum; i++ {
+	for i := range int64(maxIDNum) {
 		uuid := strconv.FormatInt(i, 10)
 
 		err := n.Insert(uuid, []float32{float32(i), float32(i)})
@@ -63,7 +63,7 @@ func registerVector(ctx context.Context, n service.NGT) error {
 		return err
 	}
 
-	for i := int64(0); i < maxIDNum; i++ {
+	for i := range int64(maxIDNum) {
 		uuid := strconv.FormatInt(i, 10)
 
 		vec, _, err := n.GetObject(uuid)
@@ -98,8 +98,8 @@ func Test_ngt_parallel_delete_and_insert(t *testing.T) {
 	mu := sync.Mutex{}
 	c := sync.NewCond(&mu)
 
-	for dup := 0; dup < duplicateIDNum; dup++ {
-		for i := int64(0); i < maxIDNum; i++ {
+	for range duplicateIDNum {
+		for i := range int64(maxIDNum) {
 			i := i
 			wg.Add(1)
 			go func() {
@@ -133,7 +133,7 @@ func Test_ngt_parallel_delete_and_insert(t *testing.T) {
 		tic := time.NewTicker(10 * time.Millisecond)
 		defer tic.Stop()
 
-		for i := 0; i < maxCreateIndexNum; i++ {
+		for range maxCreateIndexNum {
 			select {
 			case <-tic.C:
 				err := n.CreateIndex(ctx, createIndexPoolSize)
@@ -152,7 +152,7 @@ func Test_ngt_parallel_delete_and_insert(t *testing.T) {
 		t.Errorf("inserted id num = %d, want = %d", n.Len(), maxIDNum)
 	}
 
-	for i := int64(0); i < maxIDNum; i++ {
+	for i := range int64(maxIDNum) {
 		uuid := strconv.FormatInt(i, 10)
 		vec, _, err := n.GetObject(uuid)
 		if err != nil || len(vec) == 0 {
@@ -185,8 +185,8 @@ func Test_ngt_parallel_insert_and_delete(t *testing.T) {
 	mu := sync.Mutex{}
 	c := sync.NewCond(&mu)
 
-	for dup := 0; dup < duplicateIDNum; dup++ {
-		for i := int64(0); i < maxIDNum; i++ {
+	for range duplicateIDNum {
+		for i := range int64(maxIDNum) {
 			i := i
 			wg.Add(1)
 			errgroup.Go(func() error {
@@ -221,7 +221,7 @@ func Test_ngt_parallel_insert_and_delete(t *testing.T) {
 		tic := time.NewTicker(time.Second)
 		defer tic.Stop()
 
-		for i := 0; i < maxCreateIndexNum; i++ {
+		for range maxCreateIndexNum {
 			select {
 			case <-tic.C:
 				err := n.CreateIndex(ctx, createIndexPoolSize)
@@ -241,7 +241,7 @@ func Test_ngt_parallel_insert_and_delete(t *testing.T) {
 		t.Errorf("inserted id num = %d, want = %d", got, want)
 	}
 
-	for i := int64(0); i < maxIDNum; i++ {
+	for i := range int64(maxIDNum) {
 		uuid := strconv.FormatInt(i, 10)
 		if err := n.Insert(uuid, []float32{float32(i), float32(i)}); err != nil {
 			t.Error(err)

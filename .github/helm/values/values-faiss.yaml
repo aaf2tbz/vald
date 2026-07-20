@@ -13,14 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Values for deploying the Vald Agent backed by the FAISS core
-# implementation (charts/vald/templates/agent/faiss) instead of the default
-# NGT core. Used by `make e2e/v2/actions/run/faiss` (Makefile.d/e2e.mk) --
-# the image repository itself is switched from vdaas/vald-agent-ngt to
-# vdaas/vald-agent-faiss via HELM_EXTRA_OPTIONS in that target because
-# k8s/vald/manifests (Makefile.d/k8s.mk) always sets
-# --set agent.image.repository=<...>-agent-ngt first; a later --set in
-# HELM_EXTRA_OPTIONS overrides it.
 defaults:
   logging:
     level: debug
