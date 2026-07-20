@@ -110,9 +110,7 @@ func recordWithBackgroundSnapshot(b *testing.B, c Collector) {
 	// framework's goroutine-leak verification sees a clean state.
 	ctx, cancel := context.WithCancel(b.Context())
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// High frequency snapshotting
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
@@ -124,7 +122,7 @@ func recordWithBackgroundSnapshot(b *testing.B, c Collector) {
 				_ = c.GlobalSnapshot()
 			}
 		}
-	}()
+	})
 
 	b.ReportAllocs()
 	b.ResetTimer()
