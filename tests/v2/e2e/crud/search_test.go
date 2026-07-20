@@ -254,12 +254,21 @@ func checkStreamSearchResponse(
 	return func(t *testing.T, idx uint64, res *payload.Search_StreamResponse, err error) bool {
 		t.Helper()
 		if err != nil {
-			st := res.GetStatus()
-			t.Error(st.String())
+			t.Error(res.GetStatus().String())
 		}
 		r := res.GetResponse()
 		if r == nil {
-			t.Error("search stream response is nil, it can be timeout")
+			// The gateway's StreamSearch handler reports a per-item failure
+			// (e.g. a real per-request timeout) by sending a
+			// Search_StreamResponse whose oneof holds a Status rather than a
+			// Response, while the RPC itself stays healthy (err above is
+			// nil in this case). Surface that real status/code instead of
+			// guessing "it can be timeout".
+			if st := res.GetStatus(); st != nil {
+				t.Errorf("search stream response has no result, status: %s", st.String())
+			} else {
+				t.Error("search stream response is nil, it can be timeout")
+			}
 			return true
 		}
 		return checkUnarySearchResponse(neighbors, plan)(t, getIndexFromSearchResponse(t, r), r, err)

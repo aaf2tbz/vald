@@ -40,6 +40,7 @@ import (
 	"github.com/vdaas/vald/internal/sync/errgroup"
 	"github.com/vdaas/vald/tests/v2/e2e/config"
 	"github.com/vdaas/vald/tests/v2/e2e/metrics"
+	rpcstatus "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -204,6 +205,18 @@ func handleGRPCWithStatusCode(
 	return err
 }
 
+// streamStatusResponse is implemented by proto messages that embed a
+// google.rpc.Status inside their own oneof payload (e.g.
+// *payload.Search_StreamResponse, *payload.Object_StreamLocation). Vald's
+// streaming gateway handlers report a per-item failure this way without
+// failing the RPC itself (see internal/net/grpc/stream.go
+// BidirectionalStream, which always calls stream.Send(res) even when the
+// per-item handler returned an error), so the transport-level err stays nil
+// and the real per-item outcome is only visible via res's embedded Status.
+type streamStatusResponse interface {
+	GetStatus() *rpcstatus.Status
+}
+
 // handleGRPCCall centralizes the gRPC error handling, logging and assertion.
 // It compares the error's status code with the expected codes from the plan.
 // If the error is expected, it logs a message; otherwise, it logs an error.
@@ -212,13 +225,27 @@ func handleGRPCCall(
 	t *testing.T, err error, res proto.Message, plan *config.Execution,
 ) (code codes.Code, msg string, rerr error) {
 	t.Helper()
-	if err != nil {
+	switch {
+	case err != nil:
 		if st, ok := status.FromError(err); ok && st != nil {
 			msg = st.String()
 			code = st.Code()
-			rerr = errors.Wrapf(err, "gRPC request received: %s", msg)
 		}
-	} else {
+	case res != nil:
+		code = codes.OK
+		if sg, ok := res.(streamStatusResponse); ok {
+			if st := sg.GetStatus(); st != nil {
+				stCode := codes.Unknown
+				if c := st.GetCode(); c >= 0 {
+					stCode = codes.Code(c)
+				}
+				if stCode != codes.OK {
+					code = stCode
+					msg = st.GetMessage()
+				}
+			}
+		}
+	default:
 		code = codes.OK
 	}
 	rerr = handleGRPCWithStatusCode(t, err, code, res, plan)
