@@ -49,7 +49,7 @@ type runner struct {
 }
 
 func TestE2EStrategy(t *testing.T) {
-	runE2EStrategy(t)
+	runE2EStrategy(test.NewNode(t))
 }
 
 // BenchmarkE2EStrategy drives the exact same scenario configuration as
@@ -61,10 +61,14 @@ func TestE2EStrategy(t *testing.T) {
 // -benchtime 1x (or a small fixed count) since one iteration already
 // performs the execution's full configured request load.
 func BenchmarkE2EStrategy(b *testing.B) {
-	runE2EStrategy(b)
+	runE2EStrategy(test.NewNode(b))
 }
 
-func runE2EStrategy[X test.Runner[X]](t X) {
+// runE2EStrategy is deliberately non-generic: test.NewNode captured the
+// concrete testing type at the two entry points above, so the whole
+// strategy/operation/execution tree below works on the type-erased
+// test.Node (which is itself a testing.TB) and process* stay plain methods.
+func runE2EStrategy(t test.Node) {
 	if cfg == nil || cfg.Strategies == nil {
 		t.Fatal("test setting or strategies is nil, please add test configuration yaml file by -config option")
 	}
@@ -151,11 +155,11 @@ func runE2EStrategy[X test.Runner[X]](t X) {
 		// scenarios such as operator verification only use kubernetes/http operations and do not require a gRPC target.
 		t.Log("gRPC target is not configured, skipping gRPC client setup")
 	}
-	t.Run("Run E2E V2 Scenarios", func(tt X) {
-		if err := executeWithTimings(tt, ctx, cfg, cfg.FilePath, "e2e", false, func(ttt X, ctx context.Context) error {
+	t.Run("Run E2E V2 Scenarios", func(tt test.Node) {
+		if err := executeWithTimings(tt, ctx, cfg, cfg.FilePath, "e2e", false, func(ttt test.Node, ctx context.Context) error {
 			ttt.Helper()
 			for i, st := range cfg.Strategies {
-				col := processStrategy(r, ttt, ctx, i, st)
+				col := r.processStrategy(ttt, ctx, i, st)
 				if cfg.Metrics != nil && cfg.Metrics.Enabled && cfg.Collector != nil && col != nil {
 					cfg.Strategies[i].Collector = col
 					if err := col.MergeInto(cfg.Collector); err != nil {
@@ -174,16 +178,16 @@ func runE2EStrategy[X test.Runner[X]](t X) {
 	})
 }
 
-func processStrategy[X test.Runner[X]](
-	r *runner, t X, ctx context.Context, idx int, st *config.Strategy,
+func (r *runner) processStrategy(
+	t test.Node, ctx context.Context, idx int, st *config.Strategy,
 ) (col metrics.Collector) {
 	t.Helper()
 	if r == nil || st == nil {
 		return nil
 	}
 	col = st.Collector
-	t.Run(fmt.Sprintf("#%d: strategy=%s", idx, st.Name), func(tt X) {
-		if err := executeWithTimings(tt, ctx, st, st.Name, "strategy", false, func(ttt X, ctx context.Context) error {
+	t.Run(fmt.Sprintf("#%d: strategy=%s", idx, st.Name), func(tt test.Node) {
+		if err := executeWithTimings(tt, ctx, st, st.Name, "strategy", false, func(ttt test.Node, ctx context.Context) error {
 			ttt.Helper()
 			eg, egctx := errgroup.New(ctx)
 			if st.Concurrency > 0 {
@@ -196,7 +200,7 @@ func processStrategy[X test.Runner[X]](
 				if op != nil {
 					i, op := i, op
 					eg.Go(func() error {
-						c := processOperation(r, ttt, egctx, st.Name, i, op)
+						c := r.processOperation(ttt, egctx, st.Name, i, op)
 						if st.Metrics != nil && st.Metrics.Enabled && col != nil && c != nil {
 							st.Operations[i].Collector = c
 							if err := c.MergeInto(col); err != nil {
@@ -219,19 +223,19 @@ func processStrategy[X test.Runner[X]](
 	return col
 }
 
-func processOperation[X test.Runner[X]](
-	r *runner, t X, ctx context.Context, strategyName string, idx int, op *config.Operation,
+func (r *runner) processOperation(
+	t test.Node, ctx context.Context, strategyName string, idx int, op *config.Operation,
 ) (col metrics.Collector) {
 	t.Helper()
 	if r == nil || op == nil {
 		return nil
 	}
 	col = op.Collector
-	t.Run(fmt.Sprintf("#%d: operation=%s", idx, op.Name), func(tt X) {
-		if err := executeWithTimings(tt, ctx, op, op.Name, "operation", false, func(ttt X, ctx context.Context) error {
+	t.Run(fmt.Sprintf("#%d: operation=%s", idx, op.Name), func(tt test.Node) {
+		if err := executeWithTimings(tt, ctx, op, op.Name, "operation", false, func(ttt test.Node, ctx context.Context) error {
 			ttt.Helper()
 			for i, e := range op.Executions {
-				c := processExecution(r, ttt, ctx, strategyName, op.Name, i, e)
+				c := r.processExecution(ttt, ctx, strategyName, op.Name, i, e)
 				if op.Metrics != nil && op.Metrics.Enabled && col != nil && c != nil {
 					op.Executions[i].Collector = c
 					if err := c.MergeInto(col); err != nil {
@@ -252,16 +256,16 @@ func processOperation[X test.Runner[X]](
 	return col
 }
 
-func processExecution[X test.Runner[X]](
-	r *runner, t X, ctx context.Context, strategyName, opName string, idx int, e *config.Execution,
+func (r *runner) processExecution(
+	t test.Node, ctx context.Context, strategyName, opName string, idx int, e *config.Execution,
 ) (col metrics.Collector) {
 	t.Helper()
 	if r == nil || e == nil {
 		return nil
 	}
 
-	t.Run(fmt.Sprintf("#%d: execution=%s type=%s mode=%s", idx, e.Name, e.Type, e.Mode), func(tt X) {
-		if err := executeWithTimings(tt, ctx, e, e.Name, "execution", true, func(ttt X, ctx context.Context) error {
+	t.Run(fmt.Sprintf("#%d: execution=%s type=%s mode=%s", idx, e.Name, e.Type, e.Mode), func(tt test.Node) {
+		if err := executeWithTimings(tt, ctx, e, e.Name, "execution", true, func(ttt test.Node, ctx context.Context) error {
 			ttt.Helper()
 			switch e.Type {
 			case config.OpSearch,
@@ -381,11 +385,16 @@ func processExecution[X test.Runner[X]](
 	return e.Collector
 }
 
-func executeWithTimings[X test.Runner[X], T interface {
+func executeWithTimings[T interface {
 	config.Timing
 	config.Repeater
 }](
-	t X, ctx context.Context, cfg T, name, prefix string, measured bool, fn func(X, context.Context) error,
+	t test.Node,
+	ctx context.Context,
+	cfg T,
+	name, prefix string,
+	measured bool,
+	fn func(test.Node, context.Context) error,
 ) (err error) {
 	t.Helper()
 	if delay := cfg.GetDelay(); delay != "" {
@@ -456,12 +465,12 @@ func executeWithTimings[X test.Runner[X], T interface {
 	return err
 }
 
-func executeWithRepeats[X test.Runner[X]](
-	t X,
+func executeWithRepeats(
+	t test.Node,
 	ctx context.Context,
 	name, prefix string,
 	repeats *config.Repeats,
-	fn func(X, context.Context) error,
+	fn func(test.Node, context.Context) error,
 ) (err error) {
 	t.Helper()
 	if repeats != nil && repeats.Enabled {

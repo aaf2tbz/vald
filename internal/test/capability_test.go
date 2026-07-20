@@ -129,3 +129,54 @@ func TestCapabilities_B(t *testing.T) {
 		t.Errorf("Measured must give every iteration a deadline-carrying context, %d/%d missed", misses, iterations)
 	}
 }
+
+// TestNode verifies the type-erasure contract: NewNode captures the
+// concrete Runner type exactly once, Run keeps spawning correctly-typed
+// children arbitrarily deep, a Node is a valid testing.TB, and every
+// capability helper resolves the underlying entry through Unwrap — so
+// IsBenchmark/Loop/ReportMetric behave identically whether they receive
+// the raw *testing.B or a Node wrapping it.
+func TestNode(t *testing.T) {
+	root := NewNode(t)
+	if IsBenchmark(root) {
+		t.Error("IsBenchmark(Node{*testing.T}) must be false via Unwrap")
+	}
+
+	var depth2 bool
+	root.Run("child", func(child Node) {
+		child.Helper() // promoted testing.TB method
+		var runs int
+		Loop(child, func() { runs++ })
+		if runs != 1 {
+			child.Errorf("Loop through a Node over *testing.T must run once, ran %d times", runs)
+		}
+		child.Run("grandchild", func(gc Node) {
+			depth2 = true
+			var tb testing.TB = gc // Node satisfies testing.TB
+			if tb.Name() == "" {
+				gc.Error("promoted Name must identify the subtest")
+			}
+		})
+	})
+	if !depth2 {
+		t.Error("nested Node.Run must execute the grandchild")
+	}
+
+	var loops int
+	benchNode := false
+	res := testing.Benchmark(func(b *testing.B) {
+		n := NewNode(b)
+		benchNode = IsBenchmark(n)
+		n.Run("measured", func(child Node) {
+			loops = 0
+			Loop(child, func() { loops++ })
+			ReportMetric(child, float64(loops), "loops")
+		})
+	})
+	if !benchNode {
+		t.Error("IsBenchmark(Node{*testing.B}) must be true via Unwrap")
+	}
+	if loops < 1 {
+		t.Errorf("Loop through a Node over *testing.B must iterate, result: %s", res.String())
+	}
+}

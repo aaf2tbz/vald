@@ -36,10 +36,31 @@ import (
 // plain testing.TB (looser than Runner[X]) so both Runner-generic
 // orchestration code and interface-typed leaf helpers can call them.
 
+// unwrap follows Unwrap() testing.TB links (the convention Node
+// implements, mirroring errors.Unwrap) so capability detection always
+// inspects the concrete testing entry, no matter how many wrapper layers
+// sit above it. The depth bound keeps a misbehaving self-returning Unwrap
+// from spinning (wrappers holding closures are not comparable, so a
+// same-value check is not an option).
+func unwrap(t testing.TB) testing.TB {
+	for range 8 {
+		u, ok := t.(interface{ Unwrap() testing.TB })
+		if !ok {
+			return t
+		}
+		inner := u.Unwrap()
+		if inner == nil {
+			return t
+		}
+		t = inner
+	}
+	return t
+}
+
 // IsBenchmark reports whether t is driven by the benchmark harness,
 // detected through the Loop capability rather than the concrete type.
 func IsBenchmark[X testing.TB](t X) bool {
-	_, ok := any(t).(interface{ Loop() bool })
+	_, ok := unwrap(t).(interface{ Loop() bool })
 	return ok
 }
 
@@ -49,7 +70,7 @@ func IsBenchmark[X testing.TB](t X) bool {
 // the unified "measured region" iteration primitive.
 func Loop[X testing.TB](t X, body func()) {
 	t.Helper()
-	if l, ok := any(t).(interface{ Loop() bool }); ok {
+	if l, ok := unwrap(t).(interface{ Loop() bool }); ok {
 		for l.Loop() {
 			body()
 		}
@@ -88,14 +109,14 @@ func Measured[X testing.TB](
 // ReportMetric exposes value on t's benchmark result line (benchstat
 // compatible); it is a no-op when t cannot report metrics.
 func ReportMetric[X testing.TB](t X, value float64, unit string) {
-	if r, ok := any(t).(interface{ ReportMetric(float64, string) }); ok {
+	if r, ok := unwrap(t).(interface{ ReportMetric(float64, string) }); ok {
 		r.ReportMetric(value, unit)
 	}
 }
 
 // ReportAllocs enables allocation reporting when t supports it.
 func ReportAllocs[X testing.TB](t X) {
-	if r, ok := any(t).(interface{ ReportAllocs() }); ok {
+	if r, ok := unwrap(t).(interface{ ReportAllocs() }); ok {
 		r.ReportAllocs()
 	}
 }
@@ -103,7 +124,7 @@ func ReportAllocs[X testing.TB](t X) {
 // SetBytes records the number of bytes processed per iteration when t
 // supports it.
 func SetBytes[X testing.TB](t X, n int64) {
-	if r, ok := any(t).(interface{ SetBytes(int64) }); ok {
+	if r, ok := unwrap(t).(interface{ SetBytes(int64) }); ok {
 		r.SetBytes(n)
 	}
 }
@@ -113,19 +134,19 @@ func SetBytes[X testing.TB](t X, n int64) {
 // itself out of the measured window without knowing whether it runs under
 // a test or a benchmark.
 func ResetTimer[X testing.TB](t X) {
-	if r, ok := any(t).(interface{ ResetTimer() }); ok {
+	if r, ok := unwrap(t).(interface{ ResetTimer() }); ok {
 		r.ResetTimer()
 	}
 }
 
 func StartTimer[X testing.TB](t X) {
-	if r, ok := any(t).(interface{ StartTimer() }); ok {
+	if r, ok := unwrap(t).(interface{ StartTimer() }); ok {
 		r.StartTimer()
 	}
 }
 
 func StopTimer[X testing.TB](t X) {
-	if r, ok := any(t).(interface{ StopTimer() }); ok {
+	if r, ok := unwrap(t).(interface{ StopTimer() }); ok {
 		r.StopTimer()
 	}
 }
@@ -134,7 +155,7 @@ func StopTimer[X testing.TB](t X) {
 // other parallel tests; benchmarks have no such phase, so it is a no-op
 // there (b.RunParallel is a different, intra-benchmark concept).
 func Parallel[X testing.TB](t X) {
-	if p, ok := any(t).(interface{ Parallel() }); ok {
+	if p, ok := unwrap(t).(interface{ Parallel() }); ok {
 		p.Parallel()
 	}
 }

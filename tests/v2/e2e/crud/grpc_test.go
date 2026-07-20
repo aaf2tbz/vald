@@ -290,6 +290,16 @@ func single[Q, R proto.Message](
 	if rerr != nil && errors.IsNot(err, rerr) {
 		return rerr
 	}
+	if err != nil && rerr == nil {
+		// plan.Expect explicitly lists this status code (handleGRPCCall
+		// accepted the error), so the error IS the expected outcome and
+		// there is no response payload for the callbacks to validate —
+		// without this, a callback treating any non-nil err as failure
+		// would override the expectation (e.g. an Nx benchmark scenario
+		// whose create_index legitimately returns failedprecondition on
+		// re-execution, as documented for E2E_BENCH_TIME in e2e.mk).
+		return nil
+	}
 	for _, cb := range callback {
 		if cb != nil {
 			if !cb(t, idx, res, err) {
