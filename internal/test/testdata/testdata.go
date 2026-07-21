@@ -35,14 +35,20 @@ func GetTestdataPath(filename string) string {
 	return file.Join(baseDir(), "/internal/test/data/", filename)
 }
 
+// baseDir walks up from the working directory to the repository root,
+// identified as the directory whose go.mod declares the vald module path.
+// A directory-name suffix match would also accept forks or unrelated
+// directories named *vald, and a bare go.mod-presence check would stop at
+// nested modules such as example/client.
 func baseDir() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
 
-	for cur := filepath.Dir(wd); cur != string(os.PathSeparator); cur = filepath.Dir(cur) {
-		if strings.HasSuffix(cur, "vald") {
+	for cur := wd; cur != string(os.PathSeparator); cur = filepath.Dir(cur) {
+		b, err := os.ReadFile(file.Join(cur, "go.mod"))
+		if err == nil && strings.Contains(string(b), "module github.com/vdaas/vald\n") {
 			return cur
 		}
 	}

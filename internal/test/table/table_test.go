@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/vdaas/vald/internal/errors"
+	"github.com/vdaas/vald/internal/strings"
 )
 
 // TestRun_T drives Run with X = *testing.T through the default check, a
@@ -69,6 +70,58 @@ func TestRun_T(t *testing.T) {
 		{Name: "mismatch is reported via return value", Args: 1, Want: Result[int]{Val: 2}},
 	}...); err == nil {
 		t.Error("Run must return the check error for a want/got mismatch")
+	}
+}
+
+// TestRun_AllCasesRunOnFailure pins Run's run-all semantics: a failing case
+// must not stop the remaining cases, and every failure must be reported —
+// tagged with its case name — through the joined return value.
+func TestRun_AllCasesRunOnFailure(t *testing.T) {
+	var executed int
+	err := Run(t.Context(), t, func(t *testing.T, in int) (int, error) {
+		t.Helper()
+		executed++
+		return in, nil
+	}, []CaseFor[*testing.T, int, int]{
+		{Name: "first fails", Args: 1, Want: Result[int]{Val: -1}},
+		{Name: "second passes", Args: 2, Want: Result[int]{Val: 2}},
+		{Name: "third fails", Args: 3, Want: Result[int]{Val: -3}},
+	}...)
+	if executed != 3 {
+		t.Errorf("all cases must run despite earlier failures, ran %d/3", executed)
+	}
+	if err == nil {
+		t.Fatal("Run must report the joined case failures")
+	}
+	for _, name := range []string{`"first fails"`, `"third fails"`} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("joined error must name the failing case %s, got: %v", name, err)
+		}
+	}
+	if strings.Contains(err.Error(), `"second passes"`) {
+		t.Errorf("passing case must not appear in the joined error, got: %v", err)
+	}
+}
+
+// TestRun_ContextCanceled pins Run's scheduling gate: with an
+// already-canceled context no case starts and the cancellation cause is
+// reported through the returned error.
+func TestRun_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var executed int
+	err := Run(ctx, t, func(t *testing.T, in int) (int, error) {
+		t.Helper()
+		executed++
+		return in, nil
+	}, []CaseFor[*testing.T, int, int]{
+		{Name: "never runs", Args: 1, Want: Result[int]{Val: 1}},
+	}...)
+	if executed != 0 {
+		t.Errorf("no case may start after cancellation, ran %d", executed)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run must report the cancellation cause, got: %v", err)
 	}
 }
 

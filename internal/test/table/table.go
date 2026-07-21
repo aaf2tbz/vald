@@ -28,17 +28,20 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/vdaas/vald/internal/conv"
-	"github.com/vdaas/vald/internal/encoding/json"
 	"github.com/vdaas/vald/internal/errors"
 	"github.com/vdaas/vald/internal/safety"
+	"github.com/vdaas/vald/internal/sync"
 	"github.com/vdaas/vald/internal/test/capability"
+	"github.com/vdaas/vald/internal/test/comparator"
 	"github.com/vdaas/vald/internal/test/goleak"
 )
 
 // CaseFor is one row of a table-driven test or benchmark: its Args feed the
 // do function under test, Want is compared against the outcome (CheckFunc
 // defaulting to DefaultCheck), and the optional hooks run around it.
+// Name should be unique within a table: Run tags failures with it, and
+// errors.Join deduplicates identical messages, so two failing cases sharing
+// a Name would collapse into one reported failure.
 type CaseFor[X capability.Runner[X], T, A any] struct {
 	Want       Result[T]
 	Args       A
@@ -67,28 +70,32 @@ type (
 )
 
 // DefaultCheck is the CheckFunc used when a case does not provide one: the
-// error must match errors.Is-wise and the value must be deeply equal, with
-// mismatches rendered as JSON where possible for readable diffs.
+// error must match errors.Is-wise and the value must be deeply equal
+// (reflect.DeepEqual keeps the equality decision identical to the historical
+// behavior), with mismatches rendered as a structural go-cmp diff.
 func DefaultCheck[X capability.Runner[X], T any](tt X, want, got Result[T]) error {
 	tt.Helper()
 	if !errors.Is(got.Err, want.Err) {
 		return errors.Errorf("got_error: \"%#v\",\n\t\t\t\twant: \"%#v\"", got.Err, want.Err)
 	}
 	if !reflect.DeepEqual(got.Val, want.Val) {
-		gb, err := json.Marshal(got.Val)
-		gs := conv.Btoa(gb)
-		if err != nil || gb == nil {
-			gs = fmt.Sprintf("%#v", got.Val)
-		}
-
-		wb, err := json.Marshal(want.Val)
-		ws := conv.Btoa(wb)
-		if err != nil || wb == nil {
-			ws = fmt.Sprintf("%#v", want.Val)
-		}
-		return errors.Errorf("got: \"%s\",\n\t\t\t\twant: \"%s\"", gs, ws)
+		return errors.Errorf("got/want mismatch (-want +got):\n%s", renderDiff(want.Val, got.Val))
 	}
 	return nil
+}
+
+// renderDiff renders a structural go-cmp diff of two mismatching values,
+// falling back to GoString rendering when cmp cannot inspect them (it
+// panics on unexported fields without registered exporters) or when it
+// considers DeepEqual-different values equal (e.g. types with an Equal
+// method, such as time.Time's monotonic clock reading).
+func renderDiff[T any](want, got T) (diff string) {
+	defer func() {
+		if recover() != nil || diff == "" {
+			diff = fmt.Sprintf("got: \"%#v\",\n\t\t\t\twant: \"%#v\"", got, want)
+		}
+	}()
+	return comparator.Diff(want, got)
 }
 
 // runCase executes a single Case: before hook, do, check and after hook,
@@ -123,51 +130,47 @@ func runCase[X capability.Runner[X], T, A any](
 }
 
 // Run executes each case as a subtest (or sub-benchmark) of t, recovering
-// panics into errors and reporting the first case failure through its
-// return value; the subtest itself is not failed, so the caller decides how
-// to surface it.
+// panics into errors. Every case runs regardless of earlier failures — the
+// usual table-driven expectation — and the failures are joined, tagged with
+// their case names, into the returned error; the subtests themselves are
+// not failed, so the caller decides how to surface the result. Context
+// cancellation only gates scheduling: no further cases start once ctx is
+// done, and the cancellation cause is joined into the result.
 func Run[X capability.Runner[X], T, A any](
 	ctx context.Context, t X, do DoFor[X, T, A], tests ...CaseFor[X, T, A],
 ) error {
 	t.Helper()
-	ech := make(chan error, len(tests))
-	defer close(ech)
+	var (
+		// The mutex guards errs against a case body that turns its subtest
+		// parallel (parking it past this loop); such stragglers race the
+		// final read otherwise. Failures they record after Run returns are
+		// still reported by their own subtest, just not through errs.
+		mu   sync.Mutex
+		errs error
+	)
 	for _, tc := range tests {
 		select {
-		case err := <-ech:
-			if err != nil {
-				return err
-			}
 		case <-ctx.Done():
-			err := ctx.Err()
-			return err
+			mu.Lock()
+			defer mu.Unlock()
+			return errors.Join(errs, ctx.Err())
 		default:
-			test := tc
-			t.Run(test.Name, func(tt X) {
-				tt.Helper()
-				err := safety.RecoverFunc(func() error {
-					return runCase(ctx, tt, do, test)
-				})()
-				if err != nil {
-					select {
-					case ech <- err:
-					case <-ctx.Done():
-						err := ctx.Err()
-						tt.Error(err)
-					}
-				}
-			})
 		}
+		test := tc
+		t.Run(test.Name, func(tt X) {
+			tt.Helper()
+			if err := safety.RecoverFunc(func() error {
+				return runCase(ctx, tt, do, test)
+			})(); err != nil {
+				mu.Lock()
+				errs = errors.Join(errs, errors.Wrapf(err, "case %q failed", test.Name))
+				mu.Unlock()
+			}
+		})
 	}
-	select {
-	case err := <-ech:
-		return err
-	case <-ctx.Done():
-		err := ctx.Err()
-		return err
-	default:
-		return nil
-	}
+	mu.Lock()
+	defer mu.Unlock()
+	return errs
 }
 
 // The framework must keep accepting the standard testing entries.
