@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package test
+package capability
 
 import "testing"
 
@@ -57,12 +57,12 @@ func NewNode[X Runner[X]](t X) Node {
 // Run runs fn as a subtest (or sub-benchmark) named name, handing it a
 // Node wrapping the child's own testing entry.
 func (n Node) Run(name string, fn func(Node)) bool {
-	n.TB.Helper()
+	n.Helper()
 	return n.run(name, fn)
 }
 
 // Unwrap returns the underlying testing entry (e.g. *testing.T or
-// *testing.B), following the errors.Unwrap naming convention so the
-// capability helpers in this package can reach the concrete type through
-// any number of wrapping layers.
+// *testing.B), following the errors.Unwrap naming convention so As and the
+// capability helpers built on it can reach the concrete type through any
+// number of wrapping layers.
 func (n Node) Unwrap() testing.TB { return n.TB }

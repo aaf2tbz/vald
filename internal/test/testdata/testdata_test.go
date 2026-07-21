@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package test
+package testdata
 
 import (
 	"reflect"
@@ -99,9 +99,9 @@ func Test_baseDir(t *testing.T) {
 	}
 	tests := []test{
 		{
-			name: "check testdata.go exists",
+			name: "resolves the repository root",
 			checkFunc: func(w want, got string) error {
-				_, err := os.Stat(got + "/internal/test/testdata.go")
+				_, err := os.Stat(got + "/go.mod")
 				return err
 			},
 		},
@@ -129,5 +129,3 @@ func Test_baseDir(t *testing.T) {
 		})
 	}
 }
-
-// NOT IMPLEMENTED BELOW

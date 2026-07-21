@@ -14,8 +14,13 @@
 // limitations under the License.
 //
 
-// Package test provides functions for general testing use
-package test
+// Package table is the table-driven core of the test framework: one
+// parametric case shape (CaseFor) and one runner (Run) drive both tests and
+// benchmarks, with the concrete entry type expressed through capability.Runner[X].
+// The ergonomic *testing.T / *testing.B names (Case, BenchmarkCase, ...)
+// live in the parent internal/test facade; this package deliberately
+// exposes only the parametric API.
+package table
 
 import (
 	"context"
@@ -27,21 +32,14 @@ import (
 	"github.com/vdaas/vald/internal/encoding/json"
 	"github.com/vdaas/vald/internal/errors"
 	"github.com/vdaas/vald/internal/safety"
+	"github.com/vdaas/vald/internal/test/capability"
 	"github.com/vdaas/vald/internal/test/goleak"
 )
 
-// Runner constrains the concrete testing entry types this framework can
-// drive. testing.TB deliberately omits Run (T.Run and B.Run take callbacks
-// of their own concrete type, so no single method signature fits the
-// interface), which is why the constraint is self-referential: X must both
-// behave like testing.TB and spawn subtests of its own type. *testing.T and
-// *testing.B satisfy it; *testing.F does not (it has Fuzz, not Run).
-type Runner[X testing.TB] interface {
-	testing.TB
-	Run(name string, f func(X)) bool
-}
-
-type CaseFor[X Runner[X], T, A any] struct {
+// CaseFor is one row of a table-driven test or benchmark: its Args feed the
+// do function under test, Want is compared against the outcome (CheckFunc
+// defaulting to DefaultCheck), and the optional hooks run around it.
+type CaseFor[X capability.Runner[X], T, A any] struct {
 	Want       Result[T]
 	Args       A
 	BeforeFunc BeforeFuncFor[X, A]
@@ -50,36 +48,28 @@ type CaseFor[X Runner[X], T, A any] struct {
 	Name       string
 }
 
+// Result carries either a success value or an error, serving as both the
+// expected (Want) and actual (got) side of a case's outcome comparison.
 type Result[T any] struct {
 	Val T
 	Err error
 }
 
 type (
-	BeforeFuncFor[X Runner[X], A any]   func(context.Context, X, A) A
-	AfterFuncFor[X Runner[X], T, A any] func(context.Context, X, A, T, error) error
-	CheckFuncFor[X Runner[X], T any]    func(tt X, want, got Result[T]) error
-	DoFor[X Runner[X], T, A any]        func(X, A) (T, error)
+	// BeforeFuncFor prepares (and may transform) a case's Args before do runs.
+	BeforeFuncFor[X capability.Runner[X], A any] func(context.Context, X, A) A
+	// AfterFuncFor observes the case outcome for cleanup or extra assertions.
+	AfterFuncFor[X capability.Runner[X], T, A any] func(context.Context, X, A, T, error) error
+	// CheckFuncFor compares the wanted and actual Result of a case.
+	CheckFuncFor[X capability.Runner[X], T any] func(tt X, want, got Result[T]) error
+	// DoFor is the function under test, executed once per case.
+	DoFor[X capability.Runner[X], T, A any] func(X, A) (T, error)
 )
 
-// The historical *testing.T-based names are kept as generic type aliases
-// (Go 1.24+) so existing call sites compile unchanged, alongside the
-// *testing.B instantiations for table-driven benchmarks.
-type (
-	Case[T, A any]      = CaseFor[*testing.T, T, A]
-	BeforeFunc[A any]   = BeforeFuncFor[*testing.T, A]
-	AfterFunc[T, A any] = AfterFuncFor[*testing.T, T, A]
-	CheckFunc[T any]    = CheckFuncFor[*testing.T, T]
-	Do[T, A any]        = DoFor[*testing.T, T, A]
-
-	BenchmarkCase[T, A any]      = CaseFor[*testing.B, T, A]
-	BenchmarkBeforeFunc[A any]   = BeforeFuncFor[*testing.B, A]
-	BenchmarkAfterFunc[T, A any] = AfterFuncFor[*testing.B, T, A]
-	BenchmarkCheckFunc[T any]    = CheckFuncFor[*testing.B, T]
-	BenchmarkDo[T, A any]        = DoFor[*testing.B, T, A]
-)
-
-func DefaultCheck[X Runner[X], T any](tt X, want, got Result[T]) error {
+// DefaultCheck is the CheckFunc used when a case does not provide one: the
+// error must match errors.Is-wise and the value must be deeply equal, with
+// mismatches rendered as JSON where possible for readable diffs.
+func DefaultCheck[X capability.Runner[X], T any](tt X, want, got Result[T]) error {
 	tt.Helper()
 	if !errors.Is(got.Err, want.Err) {
 		return errors.Errorf("got_error: \"%#v\",\n\t\t\t\twant: \"%#v\"", got.Err, want.Err)
@@ -103,7 +93,7 @@ func DefaultCheck[X Runner[X], T any](tt X, want, got Result[T]) error {
 
 // runCase executes a single Case: before hook, do, check and after hook,
 // with goroutine-leak verification scoped to the case.
-func runCase[X Runner[X], T, A any](
+func runCase[X capability.Runner[X], T, A any](
 	ctx context.Context, tt X, do DoFor[X, T, A], test CaseFor[X, T, A],
 ) error {
 	tt.Helper()
@@ -132,7 +122,11 @@ func runCase[X Runner[X], T, A any](
 	return nil
 }
 
-func Run[X Runner[X], T, A any](
+// Run executes each case as a subtest (or sub-benchmark) of t, recovering
+// panics into errors and reporting the first case failure through its
+// return value; the subtest itself is not failed, so the caller decides how
+// to surface it.
+func Run[X capability.Runner[X], T, A any](
 	ctx context.Context, t X, do DoFor[X, T, A], tests ...CaseFor[X, T, A],
 ) error {
 	t.Helper()
@@ -175,3 +169,9 @@ func Run[X Runner[X], T, A any](
 		return nil
 	}
 }
+
+// The framework must keep accepting the standard testing entries.
+var (
+	_ capability.Runner[*testing.T] = (*testing.T)(nil)
+	_ capability.Runner[*testing.B] = (*testing.B)(nil)
+)

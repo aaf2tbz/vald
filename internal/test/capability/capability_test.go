@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package test
+package capability
 
 import (
 	"context"
@@ -23,6 +23,37 @@ import (
 
 	"github.com/vdaas/vald/internal/errors"
 )
+
+// TestAs exercises the capability probe directly: a direct hit on the
+// concrete entry, a hit through a wrapper chain (Node), a miss returning
+// the zero value, and a caller-defined capability interface this package
+// has no named helper for.
+func TestAs(t *testing.T) {
+	if _, ok := As[interface{ Helper() }](t); !ok {
+		t.Error("As must resolve a capability the entry itself satisfies")
+	}
+	if _, ok := As[interface{ Loop() bool }](t); ok {
+		t.Error("As must miss capabilities *testing.T does not have")
+	}
+
+	// Through a wrapper: Deadline is *testing.T-only (not part of
+	// testing.TB), so Node cannot satisfy this probe by method promotion —
+	// As must follow Unwrap to the concrete entry to resolve it.
+	n := NewNode(t)
+	if _, ok := As[interface{ Deadline() (time.Time, bool) }](n); !ok {
+		t.Error("As must follow Unwrap through Node to the concrete entry")
+	}
+
+	// Caller-defined capability without a named helper in this package —
+	// the open/closed extension path.
+	if run, ok := As[interface {
+		Run(string, func(*testing.T)) bool
+	}](n); !ok {
+		t.Error("As must expose caller-defined capability interfaces")
+	} else if !run.Run("sub", func(*testing.T) {}) {
+		t.Error("capability resolved via As must be callable")
+	}
+}
 
 // TestCapabilities_T exercises every capability helper with X = *testing.T:
 // Loop runs the body exactly once, Measured applies its timeout window to
@@ -71,16 +102,16 @@ func TestCapabilities_T(t *testing.T) {
 	// also instantiate the helpers (X = testing.TB) with the capability
 	// detection working off the dynamic type — the shape interface-typed
 	// leaf helpers such as tests/v2/e2e/crud's logRecallAndQPS rely on.
-	var tb testing.TB = t
-	if IsBenchmark(tb) {
+	var itb testing.TB = t
+	if IsBenchmark(itb) {
 		t.Error("IsBenchmark must inspect the dynamic type behind testing.TB")
 	}
 	runs = 0
-	Loop(tb, func() { runs++ })
+	Loop(itb, func() { runs++ })
 	if runs != 1 {
 		t.Errorf("Loop with X = testing.TB must run the body exactly once, ran %d times", runs)
 	}
-	ReportMetric(tb, 1.0, "noop")
+	ReportMetric(itb, 1.0, "noop")
 }
 
 // TestCapabilities_B exercises the helpers with X = *testing.B through
@@ -92,6 +123,7 @@ func TestCapabilities_T(t *testing.T) {
 func TestCapabilities_B(t *testing.T) {
 	var loops int
 	res := testing.Benchmark(func(b *testing.B) {
+		b.Helper()
 		if !IsBenchmark(b) {
 			b.Error("IsBenchmark(*testing.B) must be true")
 		}
@@ -111,6 +143,7 @@ func TestCapabilities_B(t *testing.T) {
 
 	var iterations, misses int
 	res = testing.Benchmark(func(b *testing.B) {
+		b.Helper()
 		iterations, misses = 0, 0
 		if err := Measured(b.Context(), b, time.Second, func(ctx context.Context) error {
 			iterations++
@@ -130,23 +163,58 @@ func TestCapabilities_B(t *testing.T) {
 	}
 }
 
+// loopWrapper wraps a testing.TB and provides its own Loop implementation,
+// pinning As's shallowest-match-wins semantics: the probe asserts at every
+// level of the chain (like errors.As) instead of blindly unwrapping to the
+// terminal entry first, so a wrapper's own capability takes precedence over
+// whatever it wraps.
+type loopWrapper struct {
+	testing.TB
+	loops int
+}
+
+func (w *loopWrapper) Unwrap() testing.TB { return w.TB }
+
+func (w *loopWrapper) Loop() bool {
+	w.loops++
+	return w.loops <= 1
+}
+
+func TestAsShallowestMatchWins(t *testing.T) {
+	w := &loopWrapper{TB: t}
+	got, ok := As[interface{ Loop() bool }](w)
+	if !ok {
+		t.Fatal("As must resolve the wrapper's own capability")
+	}
+	if got != any(w) {
+		t.Errorf("As must return the shallowest match (the wrapper itself), got %T", got)
+	}
+	// The named helpers inherit the same semantics: the wrapper's Loop
+	// drives the iteration even though the wrapped *testing.T has none.
+	var runs int
+	Loop(w, func() { runs++ })
+	if runs != 1 {
+		t.Errorf("Loop must consume the wrapper's Loop budget exactly once, ran %d times", runs)
+	}
+	if !IsBenchmark(w) {
+		t.Error("IsBenchmark must report true for a wrapper providing Loop itself")
+	}
+}
+
 // selfWrapper is a pathological testing.TB wrapper whose Unwrap returns
-// itself, exercising unwrap's depth bound: the resolver must terminate and
-// hand back a sane non-nil testing.TB instead of spinning.
+// itself, exercising As's depth bound: the probe must terminate and report
+// a miss instead of spinning (wrappers holding closures are not comparable,
+// so a same-value cycle check is not an option).
 type selfWrapper struct {
 	testing.TB
 }
 
 func (w *selfWrapper) Unwrap() testing.TB { return w }
 
-func TestUnwrapDepthBound(t *testing.T) {
+func TestAsDepthBound(t *testing.T) {
 	w := &selfWrapper{TB: t}
-	got := unwrap(w)
-	if got == nil {
-		t.Fatal("unwrap must never return nil")
-	}
-	if _, ok := got.(*selfWrapper); !ok {
-		t.Errorf("unwrap of a self-returning wrapper must fail safe with the wrapper itself, got %T", got)
+	if _, ok := As[interface{ Loop() bool }](w); ok {
+		t.Error("As through a self-returning wrapper must terminate with a miss")
 	}
 	if IsBenchmark(w) {
 		t.Error("IsBenchmark must stay false for a wrapper that never resolves to a benchmark")
@@ -181,8 +249,8 @@ func TestNode(t *testing.T) {
 		}
 		child.Run("grandchild", func(gc Node) {
 			depth2 = true
-			var tb testing.TB = gc // Node satisfies testing.TB
-			if tb.Name() == "" {
+			var itb testing.TB = gc // Node satisfies testing.TB
+			if itb.Name() == "" {
 				gc.Error("promoted Name must identify the subtest")
 			}
 		})
@@ -194,6 +262,7 @@ func TestNode(t *testing.T) {
 	var loops int
 	benchNode := false
 	res := testing.Benchmark(func(b *testing.B) {
+		b.Helper()
 		n := NewNode(b)
 		benchNode = IsBenchmark(n)
 		n.Run("measured", func(child Node) {

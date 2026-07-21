@@ -14,7 +14,26 @@
 // limitations under the License.
 //
 
-package test
+// Package capability is the capability layer over testing.TB. It owns the two
+// abstractions every other layer builds on:
+//
+//   - Runner[X], the self-referential constraint expressing "a testing.TB
+//     that can spawn subtests of its own type" (testing.TB deliberately
+//     omits Run because T.Run and B.Run take callbacks of different types);
+//   - As[C], the errors.As-style capability probe that resolves the
+//     benchmark-only (b.Loop, b.ReportMetric, timer control, ...) and
+//     test-only (t.Parallel) surfaces through any chain of wrappers.
+//
+// The named helpers (IsBenchmark, Loop, Measured, ReportMetric, ...) are
+// thin conveniences over As: each performs exactly one capability check
+// against the narrow interface it needs — never against the concrete
+// *testing.B / *testing.T types, so wrappers embedding them keep working —
+// and degrades to a documented fallback when the capability is absent.
+// Their constraint is plain testing.TB (looser than Runner[X]) so both
+// Runner-generic orchestration code and interface-typed leaf helpers can
+// call them. New capability checks do not require touching this package:
+// callers probe for their own narrow interface via As directly.
+package capability
 
 import (
 	"context"
@@ -24,43 +43,55 @@ import (
 	"github.com/vdaas/vald/internal/errors"
 )
 
-// This file is the capability layer that completes the Runner[X]
-// unification: Runner expresses the shared testing.TB + Run surface, but
-// the benchmark-only controls (b.Loop, b.ReportMetric, timer control, ...)
-// and the test-only ones (t.Parallel) have no common interface, so generic
-// code would otherwise scatter `any(t).(*testing.B)` assertions at every
-// use site. Each helper below performs exactly one capability check against
-// the narrow interface it needs — not against the concrete *testing.B /
-// *testing.T types, so wrappers embedding them keep working — and degrades
-// to a documented fallback when the capability is absent. The constraint is
-// plain testing.TB (looser than Runner[X]) so both Runner-generic
-// orchestration code and interface-typed leaf helpers can call them.
+// Runner constrains the concrete testing entry types the test framework can
+// drive. testing.TB deliberately omits Run (T.Run and B.Run take callbacks
+// of their own concrete type, so no single method signature fits the
+// interface), which is why the constraint is self-referential: X must both
+// behave like testing.TB and spawn subtests of its own type. *testing.T and
+// *testing.B satisfy it; *testing.F does not (it has Fuzz, not Run).
+type Runner[X testing.TB] interface {
+	testing.TB
+	Run(name string, f func(X)) bool
+}
 
-// unwrap follows Unwrap() testing.TB links (the convention Node
-// implements, mirroring errors.Unwrap) so capability detection always
-// inspects the concrete testing entry, no matter how many wrapper layers
-// sit above it. The depth bound keeps a misbehaving self-returning Unwrap
-// from spinning (wrappers holding closures are not comparable, so a
-// same-value check is not an option).
-func unwrap(t testing.TB) testing.TB {
-	for range 8 {
-		u, ok := t.(interface{ Unwrap() testing.TB })
+// maxUnwrapDepth bounds the wrapper chain As is willing to follow. Wrappers
+// holding closures are not comparable, so a same-value cycle check is not an
+// option; the depth bound keeps a misbehaving self-returning Unwrap from
+// spinning.
+const maxUnwrapDepth = 8
+
+// As reports whether t — or any testing.TB it wraps — satisfies the
+// capability interface C, returning the first value in the chain that does.
+// Wrappers participate by exposing Unwrap() testing.TB (the convention Node
+// implements, mirroring errors.Unwrap). It is the single extension point of
+// the capability layer: code needing a capability this package has no named
+// helper for probes for its own narrow interface, e.g.
+//
+//	if b, ok := capability.As[interface{ Elapsed() time.Duration }](t); ok { ... }
+func As[C any](tb testing.TB) (C, bool) {
+	tb.Helper()
+	for range maxUnwrapDepth {
+		if c, ok := any(tb).(C); ok {
+			return c, true
+		}
+		u, ok := tb.(interface{ Unwrap() testing.TB })
 		if !ok {
-			return t
+			break
 		}
 		inner := u.Unwrap()
 		if inner == nil {
-			return t
+			break
 		}
-		t = inner
+		tb = inner
 	}
-	return t
+	var zero C
+	return zero, false
 }
 
 // IsBenchmark reports whether t is driven by the benchmark harness,
 // detected through the Loop capability rather than the concrete type.
 func IsBenchmark[X testing.TB](t X) bool {
-	_, ok := unwrap(t).(interface{ Loop() bool })
+	_, ok := As[interface{ Loop() bool }](t)
 	return ok
 }
 
@@ -70,7 +101,7 @@ func IsBenchmark[X testing.TB](t X) bool {
 // the unified "measured region" iteration primitive.
 func Loop[X testing.TB](t X, body func()) {
 	t.Helper()
-	if l, ok := unwrap(t).(interface{ Loop() bool }); ok {
+	if l, ok := As[interface{ Loop() bool }](t); ok {
 		for l.Loop() {
 			body()
 		}
@@ -109,14 +140,14 @@ func Measured[X testing.TB](
 // ReportMetric exposes value on t's benchmark result line (benchstat
 // compatible); it is a no-op when t cannot report metrics.
 func ReportMetric[X testing.TB](t X, value float64, unit string) {
-	if r, ok := unwrap(t).(interface{ ReportMetric(float64, string) }); ok {
+	if r, ok := As[interface{ ReportMetric(float64, string) }](t); ok {
 		r.ReportMetric(value, unit)
 	}
 }
 
 // ReportAllocs enables allocation reporting when t supports it.
 func ReportAllocs[X testing.TB](t X) {
-	if r, ok := unwrap(t).(interface{ ReportAllocs() }); ok {
+	if r, ok := As[interface{ ReportAllocs() }](t); ok {
 		r.ReportAllocs()
 	}
 }
@@ -124,7 +155,7 @@ func ReportAllocs[X testing.TB](t X) {
 // SetBytes records the number of bytes processed per iteration when t
 // supports it.
 func SetBytes[X testing.TB](t X, n int64) {
-	if r, ok := unwrap(t).(interface{ SetBytes(int64) }); ok {
+	if r, ok := As[interface{ SetBytes(int64) }](t); ok {
 		r.SetBytes(n)
 	}
 }
@@ -133,7 +164,7 @@ func SetBytes[X testing.TB](t X, n int64) {
 // otherwise), so generic setup code can keep itself out of the measured
 // window without knowing whether it runs under a test or a benchmark.
 func ResetTimer[X testing.TB](t X) {
-	if r, ok := unwrap(t).(interface{ ResetTimer() }); ok {
+	if r, ok := As[interface{ ResetTimer() }](t); ok {
 		r.ResetTimer()
 	}
 }
@@ -141,7 +172,7 @@ func ResetTimer[X testing.TB](t X) {
 // StartTimer resumes the benchmark timer when t supports it (no-op
 // otherwise); pair it with StopTimer around unmeasured teardown work.
 func StartTimer[X testing.TB](t X) {
-	if r, ok := unwrap(t).(interface{ StartTimer() }); ok {
+	if r, ok := As[interface{ StartTimer() }](t); ok {
 		r.StartTimer()
 	}
 }
@@ -149,7 +180,7 @@ func StartTimer[X testing.TB](t X) {
 // StopTimer pauses the benchmark timer when t supports it (no-op
 // otherwise), keeping generic teardown work out of the measured window.
 func StopTimer[X testing.TB](t X) {
-	if r, ok := unwrap(t).(interface{ StopTimer() }); ok {
+	if r, ok := As[interface{ StopTimer() }](t); ok {
 		r.StopTimer()
 	}
 }
@@ -158,7 +189,7 @@ func StopTimer[X testing.TB](t X) {
 // other parallel tests; benchmarks have no such phase, so it is a no-op
 // there (b.RunParallel is a different, intra-benchmark concept).
 func Parallel[X testing.TB](t X) {
-	if p, ok := unwrap(t).(interface{ Parallel() }); ok {
+	if p, ok := As[interface{ Parallel() }](t); ok {
 		p.Parallel()
 	}
 }

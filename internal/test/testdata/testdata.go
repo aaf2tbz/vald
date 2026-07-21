@@ -11,7 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package test
+
+// Package testdata resolves fixture files under internal/test/data. It is
+// deliberately separate from the framework layers (tb, table): path
+// resolution needs the filesystem wrappers (internal/file, internal/os),
+// and keeping those dependencies out of the framework keeps the latter a
+// leaf package.
+package testdata
 
 import (
 	"path/filepath"
@@ -21,9 +27,8 @@ import (
 	"github.com/vdaas/vald/internal/strings"
 )
 
-const (
-	ValidIndex = "agent/ngt/validIndex"
-)
+// ValidIndex is the fixture path of a valid NGT agent index.
+const ValidIndex = "agent/ngt/validIndex"
 
 // GetTestdataPath returns the test data file path under `internal/test/data`.
 func GetTestdataPath(filename string) string {
