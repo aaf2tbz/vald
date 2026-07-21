@@ -152,7 +152,6 @@ on:
       - internal/tls/*.go
       - internal/version/*.go
       - pkg/tools/benchmark/job/config/*.go
-      - pkg/tools/benchmark/job/handler/grpc/*.go
       - pkg/tools/benchmark/job/handler/rest/*.go
       - pkg/tools/benchmark/job/router/*.go
       - pkg/tools/benchmark/job/service/*.go
@@ -274,7 +273,6 @@ on:
       - internal/tls/*.go
       - internal/version/*.go
       - pkg/tools/benchmark/job/config/*.go
-      - pkg/tools/benchmark/job/handler/grpc/*.go
       - pkg/tools/benchmark/job/handler/rest/*.go
       - pkg/tools/benchmark/job/router/*.go
       - pkg/tools/benchmark/job/service/*.go

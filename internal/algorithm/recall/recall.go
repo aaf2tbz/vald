@@ -14,20 +14,22 @@
 // limitations under the License.
 //
 
-package metrics
+// Package recall is the repository's single implementation of the recall@k
+// accuracy metric for nearest-neighbor search results. Both the e2e test
+// harness (tests/v2/e2e/metrics, integer hdf5 ground-truth indices) and the
+// benchmark job (pkg/tools/benchmark/job/service, string IDs against
+// linear-search ground truth) delegate here.
+package recall
 
-import algorithm "github.com/vdaas/vald/internal/algorithm/recall"
-
-// CalcRecall reports the recall@k score of an approximate nearest-neighbor
-// search result against the ground-truth neighbor IDs for a single query.
+// Calc reports the recall@k score of an approximate nearest-neighbor search
+// result against the ground-truth neighbor IDs for a single query.
 //
 // got is the ID list returned by the (approximate) search, ordered from the
 // nearest neighbor to the farthest. truth is the corresponding ground-truth
-// neighbor ID list for the same query, e.g. one row of
-// tests/v2/e2e/hdf5.Dataset.Neighbors (also ordered nearest to farthest, and
-// typically longer than the k actually requested from the search, since
-// ann-benchmarks-style hdf5 files usually store the top-100 ground truth
-// regardless of the benchmark's k).
+// neighbor ID list for the same query — e.g. one row of an
+// ann-benchmarks-style hdf5 neighbors dataset, or the IDs returned by an
+// exhaustive linear search — also ordered nearest to farthest and possibly
+// longer than the k actually requested from the search.
 //
 // recall@k depends only on set membership, not on order:
 //
@@ -42,13 +44,28 @@ import algorithm "github.com/vdaas/vald/internal/algorithm/recall"
 // effectiveK must NOT be considered "correct" either.
 //
 // If effectiveK <= 0 (k <= 0, or truth is empty/nil — e.g. no ground-truth
-// dataset is available), CalcRecall returns 0 without an error, since recall
-// is undefined for an empty ground truth and 0 is the conservative answer.
-//
-// CalcRecall delegates to internal/algorithm/recall.Calc — the repository's
-// single recall implementation, shared with pkg/tools/benchmark — retaining
-// this package's historical signature over integer hdf5 ground-truth
-// indices.
-func CalcRecall(got, truth []int, k int) (recall float64) {
-	return algorithm.Calc(got, truth, k)
+// dataset is available), Calc returns 0, since recall is undefined for an
+// empty ground truth and 0 is the conservative answer.
+func Calc[T comparable](got, truth []T, k int) float64 {
+	effectiveK := min(len(truth), k)
+	if effectiveK <= 0 {
+		return 0
+	}
+	if len(got) > effectiveK {
+		got = got[:effectiveK]
+	}
+	truth = truth[:effectiveK]
+
+	truthIDs := make(map[T]struct{}, effectiveK)
+	for _, id := range truth {
+		truthIDs[id] = struct{}{}
+	}
+
+	var matched float64
+	for _, id := range got {
+		if _, ok := truthIDs[id]; ok {
+			matched++
+		}
+	}
+	return matched / float64(effectiveK)
 }

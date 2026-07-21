@@ -793,6 +793,8 @@ hack/license/gen/main_test.go
 hack/tools/deadlink/index.html
 hack/tools/deadlink/main.go
 hack/tools/kvsdb/main.go
+internal/algorithm/recall/recall.go
+internal/algorithm/recall/recall_test.go
 internal/backoff/backoff.go
 internal/backoff/backoff_test.go
 internal/backoff/context.go
@@ -1627,6 +1629,8 @@ internal/test/mock/k8s/doc.go
 internal/test/mock/k8s/fake.go
 internal/test/mock/k8s/reconciler.go
 internal/test/mock/server_stream.go
+internal/test/retry/retry.go
+internal/test/retry/retry_test.go
 internal/test/table/table.go
 internal/test/table/table_test.go
 internal/test/testdata/testdata.go
@@ -2227,9 +2231,6 @@ pkg/tools/benchmark/job/config/config.go
 pkg/tools/benchmark/job/config/config_test.go
 pkg/tools/benchmark/job/config/doc.go
 pkg/tools/benchmark/job/handler/doc.go
-pkg/tools/benchmark/job/handler/grpc/doc.go
-pkg/tools/benchmark/job/handler/grpc/handler.go
-pkg/tools/benchmark/job/handler/grpc/option.go
 pkg/tools/benchmark/job/handler/rest/doc.go
 pkg/tools/benchmark/job/handler/rest/handler.go
 pkg/tools/benchmark/job/handler/rest/option.go

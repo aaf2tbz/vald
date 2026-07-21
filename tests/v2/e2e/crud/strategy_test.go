@@ -35,6 +35,7 @@ import (
 	"github.com/vdaas/vald/internal/net/grpc"
 	"github.com/vdaas/vald/internal/sync/errgroup"
 	"github.com/vdaas/vald/internal/test"
+	"github.com/vdaas/vald/internal/test/retry"
 	"github.com/vdaas/vald/tests/v2/e2e/config"
 	"github.com/vdaas/vald/tests/v2/e2e/metrics"
 	"google.golang.org/grpc/metadata"
@@ -469,89 +470,60 @@ func executeWithTimings[T interface {
 	return err
 }
 
+// executeWithRepeats adapts the scenario's declarative repeat configuration
+// to retry.Do — see internal/test/retry for the exact per-mode exit and
+// error semantics (including ModeSuccess doubling as a bounded wait, which
+// max_vector_dim.yaml's ResourceExhausted branch relies on) — and threads
+// per-attempt logging through Policy.OnRetry.
 func executeWithRepeats(
 	t test.Node,
 	ctx context.Context,
 	name, prefix string,
 	repeats *config.Repeats,
 	fn func(test.Node, context.Context) error,
-) (err error) {
+) error {
 	t.Helper()
-	if repeats != nil && repeats.Enabled {
-		idx := uint64(0)
-		for {
-			var task string
-			if repeats.ExitCondition == config.Count {
-				task = fmt.Sprintf("Repeat %s for %s (%d/%d)", prefix, name, idx+1, repeats.Count)
-				if idx >= repeats.Count {
-					break
-				}
-			} else {
-				task = fmt.Sprintf("Repeat %s for %s (%d), ExitCondition: %s", prefix, name, idx+1, repeats.ExitCondition)
-			}
-			if idx > 0 {
-				if wait := repeats.Interval; wait != "" {
-					dur, werr := wait.Duration()
-					if werr != nil {
-						t.Errorf("failed to parse wait duration: %s, error: %v", wait, werr)
-						return err
-					}
-					if dur > 0 {
-						log.Infof("Waiting interval: %s for %s", repeats.Interval, task)
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case <-time.After(dur):
-						}
-					}
-				}
-			}
-			idx++
-			select {
-			case <-ctx.Done():
-				err = ctx.Err()
-				log.Warnf("context canceled due to %s during %s", err.Error(), task)
-				if err != nil && errors.IsNot(err, context.Canceled, context.DeadlineExceeded) {
-					return err
-				}
-				return nil
-			default:
-			}
-			log.Info(task)
-			ierr := fn(t, ctx)
-			if ierr == nil && repeats.ExitCondition == config.Success {
-				log.Infof("successfully finished %s, exiting repeat loop", task)
-				break
-			}
-			if ierr != nil {
-				if repeats.ExitCondition == config.Success {
-					if errors.IsNot(ierr, context.Canceled, context.DeadlineExceeded) {
-						log.Warnf("failed to finish %s, error: %v, will retry", task, ierr)
-						continue
-					}
-					// Reaching the execution timeout without a successful
-					// attempt intentionally does NOT fail the execution:
-					// scenarios rely on it as a bounded wait (e.g.
-					// max_vector_dim.yaml, whose ResourceExhausted branch
-					// keeps returning NotFound and passes once the timeout
-					// elapses).
-					log.Warnf("%v occurred during %s, exiting repeat loop", ierr, task)
-					return err
-				}
-				if errors.IsNot(ierr, context.Canceled, context.DeadlineExceeded) {
-					err = errors.Join(err, ierr)
-				} else {
-					// timeout
-					if repeats.ExitCondition != config.Timeout {
-						t.Error("timeout occurred during execution of", task)
-					}
-					break
-				}
-			}
-		}
-		return err
+	task := fmt.Sprintf("%s for %s", prefix, name)
+	policy := retry.Policy{
+		OnRetry: func(attempt uint64, err error) {
+			log.Warnf("failed to finish %s (attempt %d), error: %v, will retry", task, attempt, err)
+		},
 	}
-	return fn(t, ctx)
+	if repeats != nil && repeats.Enabled {
+		task = fmt.Sprintf("Repeat %s, ExitCondition: %s", task, repeats.ExitCondition)
+		switch repeats.ExitCondition {
+		case config.Success:
+			policy.Mode = retry.ModeSuccess
+		case config.Count:
+			policy.Mode = retry.ModeCount
+			policy.Count = repeats.Count
+		case config.Timeout:
+			policy.Mode = retry.ModeTimeout
+		default:
+			// Fail loudly instead of silently degrading to a single attempt
+			// (retry.ModeOnce is the Policy zero value) when a scenario
+			// enables repeats but omits or misspells exit_condition.
+			t.Errorf("unknown repeats exit_condition %q for %s, ignoring the repeat configuration", repeats.ExitCondition, task)
+		}
+		if wait := repeats.Interval; wait != "" {
+			dur, werr := wait.Duration()
+			if werr != nil {
+				t.Errorf("failed to parse repeat interval: %s, error: %v", wait, werr)
+				return nil
+			}
+			policy.Interval = dur
+		}
+	}
+	var attempts uint64
+	err := retry.Do(ctx, policy, func(ictx context.Context) error {
+		attempts++
+		log.Infof("%s (attempt %d)", task, attempts)
+		return fn(t, ictx)
+	})
+	if policy.Mode != retry.ModeOnce {
+		log.Infof("finished %s after %d attempt(s), error: %v", task, attempts, err)
+	}
+	return err
 }
 
 func newClient(
