@@ -164,15 +164,48 @@ strategies:
             type: create_index
             expect:
               - status_code: ok
+              # The agent's auto-indexing may have already committed every
+              # inserted vector by the time this explicit CreateIndex runs, in
+              # which case it returns FailedPrecondition
+              # ("uncommitted indexes are not found").
+              - status_code: failedprecondition
+          # retry_until_success_timeout was never a real config key (unknown
+          # keys are silently dropped); repeats with exit_condition: success
+          # bounded by the execution timeout is the working retry construct.
           - mode: unary
             name: IndexInfo
             type: index_info
-            retry_until_success_timeout: 5m
+            timeout: 5m
+            repeats:
+              enabled: true
+              exit_condition: success
+              interval: 5s
             expect:
               - status_code: ok
                 path: $.stored
                 op: ge
                 value: _E2E_EXPECTED_INDEX_
+          # $.stored can already report the target count while the NGT graph
+          # build is still in progress (indexing: true), and $.indexing cannot
+          # be asserted via expect because protojson omits false fields. Probe
+          # with a real search until the agent stops returning Aborted
+          # ("creating indices is in progress") before measuring recall/QPS.
+          - mode: unary
+            name: WaitSearchReady
+            type: search
+            num: 1
+            parallelism: 1
+            timeout: 5m
+            repeats:
+              enabled: true
+              exit_condition: success
+              interval: 5s
+            search:
+              k: 10
+              timeout: 3s
+              algorithm: cq
+            expect:
+              - status_code: ok
   - concurrency: 1
     name: Agent Recall and QPS
     operations:

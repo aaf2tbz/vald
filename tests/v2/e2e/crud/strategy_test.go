@@ -299,7 +299,11 @@ func (r *runner) processExecution(
 					config.OpSearchByID,
 					config.OpLinearSearch,
 					config.OpLinearSearchByID:
-					return r.processSearch(ttt, ctx, train, test, neighbors, e)
+					// processSearch takes the query-vector cycle first (test) and the
+					// indexed-vector cycle second (train); passing them swapped made
+					// every Search/LinearSearch query a train vector, so recall@k
+					// against the dataset's test ground truth was structurally zero.
+					return r.processSearch(ttt, ctx, test, train, neighbors, e)
 				case config.OpInsert,
 					config.OpUpdate,
 					config.OpUpsert,
@@ -515,13 +519,23 @@ func executeWithRepeats(
 			}
 			log.Info(task)
 			ierr := fn(t, ctx)
+			if ierr == nil && repeats.ExitCondition == config.Success {
+				log.Infof("successfully finished %s, exiting repeat loop", task)
+				break
+			}
 			if ierr != nil {
 				if repeats.ExitCondition == config.Success {
 					if errors.IsNot(ierr, context.Canceled, context.DeadlineExceeded) {
 						log.Warnf("failed to finish %s, error: %v, will retry", task, ierr)
 						continue
 					}
-					log.Infof("successfully finished %s, exiting repeat loop", task)
+					// Reaching the execution timeout without a successful
+					// attempt intentionally does NOT fail the execution:
+					// scenarios rely on it as a bounded wait (e.g.
+					// max_vector_dim.yaml, whose ResourceExhausted branch
+					// keeps returning NotFound and passes once the timeout
+					// elapses).
+					log.Warnf("%v occurred during %s, exiting repeat loop", ierr, task)
 					return err
 				}
 				if errors.IsNot(ierr, context.Canceled, context.DeadlineExceeded) {

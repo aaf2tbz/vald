@@ -20,6 +20,9 @@
 package hdf5
 
 import (
+	"unsafe"
+
+	"github.com/vdaas/vald/internal/errors"
 	"github.com/vdaas/vald/internal/iter"
 	"github.com/vdaas/vald/internal/sync"
 	"github.com/vdaas/vald/internal/test/data/vector/noise"
@@ -99,9 +102,20 @@ func ToDataset(name string) (*Dataset, error) {
 		return nil, err
 	}
 
-	neighbors, err := ReadDataset[int](file, "neighbors")
+	// ann-benchmarks files store neighbors as 4-byte integers; read with a
+	// matching element type (see the size guard in ReadDataset) and widen to
+	// int afterwards.
+	neighbors32, err := ReadDataset[int32](file, "neighbors")
 	if err != nil {
 		return nil, err
+	}
+	neighbors := make([][]int, len(neighbors32))
+	for i, row := range neighbors32 {
+		r := make([]int, len(row))
+		for j, v := range row {
+			r[j] = int(v)
+		}
+		neighbors[i] = r
 	}
 
 	return &Dataset{
@@ -118,6 +132,23 @@ func ReadDataset[T any](file *hdf5.File, name string) ([][]T, error) {
 		return nil, err
 	}
 	defer data.Close()
+
+	// gonum/hdf5's Dataset.Read passes the FILE datatype as the memory type,
+	// so no element conversion ever happens: reading e.g. a 4-byte integer
+	// dataset into []int64 silently packs two file values per Go element and
+	// leaves the tail zeroed. Reject size mismatches loudly instead.
+	dtype, err := data.Datatype()
+	if err != nil {
+		return nil, err
+	}
+	defer dtype.Close()
+	var zero T
+	if got, want := dtype.Size(), uint(unsafe.Sizeof(zero)); got != want {
+		return nil, errors.Errorf(
+			"dataset %s element size mismatch: file stores %d-byte elements but requested Go type is %d bytes",
+			name, got, want,
+		)
+	}
 
 	dataspace := data.Space()
 	defer dataspace.Close()

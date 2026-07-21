@@ -322,9 +322,11 @@ func unary[Q, R proto.Message](
 	t.Helper()
 	// Create an error group to manage concurrent requests.
 	eg, ctx := errgroup.New(ctx)
-	// Set the concurrency limit from the plan configuration.
-	if plan != nil && plan.BaseConfig != nil {
-		// Set the concurrency limit from the plan configuration.
+	// Set the concurrency limit from the plan configuration. Parallelism 0
+	// (unset) must not reach SetLimit: it would create a zero-capacity
+	// semaphore that every eg.Go blocks on forever, deadlocking the
+	// execution until its timeout.
+	if plan != nil && plan.BaseConfig != nil && plan.Parallelism > 0 {
 		eg.SetLimit(int(plan.Parallelism))
 	}
 	for i, vec := range data.Seq2(ctx) {
@@ -351,9 +353,11 @@ func multi[Q, M, R proto.Message](
 ) error {
 	t.Helper()
 	eg, ctx := errgroup.New(ctx)
-	// Set the concurrency limit from the plan configuration.
-	if plan != nil && plan.BaseConfig != nil {
-		// Set the concurrency limit from the plan configuration.
+	// Set the concurrency limit from the plan configuration. Parallelism 0
+	// (unset) must not reach SetLimit: it would create a zero-capacity
+	// semaphore that every eg.Go blocks on forever, deadlocking the
+	// execution until its timeout.
+	if plan != nil && plan.BaseConfig != nil && plan.Parallelism > 0 {
 		eg.SetLimit(int(plan.Parallelism))
 	}
 	var bulkSize uint64

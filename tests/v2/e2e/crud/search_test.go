@@ -207,7 +207,10 @@ func (r *runner) processSearch(
 	case config.OpLinearSearchByID:
 		switch plan.Mode {
 		case config.OperationUnary, config.OperationOther:
-			return unary(t, ctx, test, plan, r.client.LinearSearchByID, searchIDRequest, checkUnarySearchResponse(neighbors, plan))
+			// The train cycle is passed for consistency with the other ByID
+			// branches; searchIDRequest ignores the vector and derives the ID
+			// from the request index alone.
+			return unary(t, ctx, train, plan, r.client.LinearSearchByID, searchIDRequest, checkUnarySearchResponse(neighbors, plan))
 		case config.OperationMultiple:
 			return multi(t, ctx, train, plan, r.client.MultiLinearSearchByID, searchIDRequest, searchMultiIDRequest, checkMultiSearchResponse(neighbors, plan))
 		case config.OperationStream:

@@ -149,16 +149,16 @@ strategies:
             search:
               timeout: 3s
             # exit_condition: success (see executeWithRepeats in
-            # tests/v2/e2e/crud/strategy_test.go) retries on any non-timeout
-            # error and only stops once the execution timeout above elapses
-            # (there is no early-return path for a successful attempt). If
-            # Insert legitimately ended in ResourceExhausted above, the
-            # vector was never stored, so every SearchByID attempt here
-            # returns NotFound (an expect mismatch, i.e. a retryable error),
-            # and this scenario keeps retrying for the full
-            # _E2E_MAX_DIM_RETRY_TIMEOUT_ before passing once the timeout is
-            # reached. That is slower than the real-vector path, but it is
-            # still a correct pass for this legitimate boundary case.
+            # tests/v2/e2e/crud/strategy_test.go) exits as soon as an attempt
+            # succeeds, retries on any non-timeout error, and stops without
+            # failing once the execution timeout above elapses. If Insert
+            # legitimately ended in ResourceExhausted above, the vector was
+            # never stored, so every SearchByID attempt here returns NotFound
+            # (an expect mismatch, i.e. a retryable error), and this scenario
+            # keeps retrying for the full _E2E_MAX_DIM_RETRY_TIMEOUT_ before
+            # passing once the timeout is reached. That is slower than the
+            # real-vector path, but it is still a correct pass for this
+            # legitimate boundary case.
             expect:
               - status_code: ok
                 path: $.results.length()
